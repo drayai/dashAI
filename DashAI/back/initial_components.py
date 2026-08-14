@@ -65,6 +65,10 @@ from DashAI.back.converters.simple_converters.nan_remover import NanRemover
 from DashAI.back.converters.simple_converters.numeric_expansion import NumericExpansion
 from DashAI.back.converters.simple_converters.type_cast import TypeCast
 
+# Credentials
+from DashAI.back.credentials.huggingface_credential import HuggingFaceCredential
+from DashAI.back.credentials.kaggle_credential import KaggleCredential
+
 # DataLoaders
 from DashAI.back.dataloaders.classes.arff_dataloader import ARFFDataLoader
 from DashAI.back.dataloaders.classes.csv_dataloader import CSVDataLoader
@@ -380,6 +384,14 @@ from DashAI.back.tasks.text_to_image_generation_task import TextToImageGeneratio
 from DashAI.back.tasks.text_to_text_generation_task import TextToTextGenerationTask
 from DashAI.back.tasks.translation_task import TranslationTask
 
+# Units
+from DashAI.back.units.build_model_unit import BuildModelUnit
+from DashAI.back.units.evaluate_model_unit import EvaluateModelUnit
+from DashAI.back.units.fit_model_unit import FitModelUnit
+from DashAI.back.units.load_dataset_unit import LoadDatasetUnit
+from DashAI.back.units.prepare_and_split_unit import PrepareAndSplitUnit
+from DashAI.back.units.save_model_unit import SaveModelUnit
+
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 
@@ -508,6 +520,9 @@ def get_initial_components():
         HuggingFaceDatasetSource,
         OpenMLDatasetSource,
         ZenodoDatasetSource,
+        # Credentials
+        HuggingFaceCredential,
+        KaggleCredential,
         # Metrics
         F1,
         Accuracy,
@@ -542,6 +557,13 @@ def get_initial_components():
         DatasetJob,
         GenerativeJob,
         PipelineJob,
+        # Units
+        LoadDatasetUnit,
+        PrepareAndSplitUnit,
+        BuildModelUnit,
+        FitModelUnit,
+        EvaluateModelUnit,
+        SaveModelUnit,
         # Explainers
         ContrastiveShap,
         DiceCounterfactual,
