@@ -1,14 +1,9 @@
 import logging
-<<<<<<< HEAD
 from typing import TYPE_CHECKING, Any, Dict, List
-=======
-from typing import TYPE_CHECKING
->>>>>>> 28a352cb8f3a4434ec366ec3619f4b82bfc49d1e
 
 from kink import inject
 from sqlalchemy import exc
 
-<<<<<<< HEAD
 from DashAI.back.dependencies.database.models import Dataset, ModelSession, Run
 from DashAI.back.dependencies.downloads.nested import missing_downloads
 from DashAI.back.evaluation.base_evaluation_strategy import BaseEvaluationStrategy
@@ -19,20 +14,11 @@ from DashAI.back.models.model_factory import ModelFactory
 from DashAI.back.optimizers.base_optimizer import BaseOptimizer
 from DashAI.back.splitters.base_splitter import BaseSplitter
 from DashAI.back.tasks.base_task import BaseTask
-=======
-from DashAI.back.dependencies.database.models import ModelSession, Run
-from DashAI.back.job.base_job import BaseJob, JobError
-from DashAI.back.units.build_model_unit import BuildModelUnit
-from DashAI.back.units.context import ExecutionContext
-from DashAI.back.units.evaluate_model_unit import EvaluateModelUnit
-from DashAI.back.units.fit_model_unit import FitModelUnit
-from DashAI.back.units.load_dataset_unit import LoadDatasetUnit
-from DashAI.back.units.prepare_and_split_unit import PrepareAndSplitUnit
-from DashAI.back.units.save_model_unit import SaveModelUnit
->>>>>>> 28a352cb8f3a4434ec366ec3619f4b82bfc49d1e
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import sessionmaker
+
+    from DashAI.back.dataloaders.classes.dashai_dataset import DashAIDataset
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
@@ -107,32 +93,23 @@ class ModelJob(BaseJob):
     ) -> None:
         import gc
         import json
-<<<<<<< HEAD
         import os
 
         from kink import di
 
         component_registry = di["component_registry"]
-=======
-
-        from kink import di
-
->>>>>>> 28a352cb8f3a4434ec366ec3619f4b82bfc49d1e
         session_factory = di["session_factory"]
+        config = di["config"]
 
         # Get the necessary parameters
         run_id: int = self.kwargs["run_id"]
-        ctx = ExecutionContext(refs={"run_id": run_id})
 
         with session_factory() as db:
             run: Run = db.get(Run, run_id)
-            if not run:
-                raise JobError(f"Run {run_id} does not exist in DB.")
             run.huey_id = self.kwargs.get("huey_id", None)
             db.commit()
             self.report_progress(0.05, "Preparing data")
             try:
-<<<<<<< HEAD
                 try:
                     # Get the dataset and components prepared for the model training
                     preparation_results = self._prepare_dataset_and_components(
@@ -162,45 +139,6 @@ class ModelJob(BaseJob):
                         f"Error splitting the dataset for run {run_id}: {e}",
                     ) from e
 
-=======
-                # The model session holds the configuration every unit reads.
-                model_session: ModelSession = db.get(ModelSession, run.model_session_id)
-                if not model_session:
-                    raise JobError(
-                        f"Model session {run.model_session_id} does not exist in DB."
-                    )
-                LoadDatasetUnit(dataset_id=model_session.dataset_id)(ctx)
-
-                PrepareAndSplitUnit(
-                    task_name=model_session.task_name,
-                    input_columns=model_session.input_columns,
-                    output_columns=model_session.output_columns,
-                    splits=json.loads(model_session.splits),
-                )(ctx)
-
-                run.split_indexes = json.dumps(ctx.require("split_indexes"))
-
-                # __call__ runs validate() (the download gate) before execute()
-                # for every unit, so no separate pre-check is needed here.
-                BuildModelUnit(
-                    model={"component": run.model_name, "params": run.parameters},
-                    train_metrics=model_session.train_metrics,
-                    validation_metrics=model_session.validation_metrics,
-                    test_metrics=model_session.test_metrics,
-                )(ctx)
-
-                # Resolving the optimizer before the status changes keeps an
-                # invalid configuration from ever reporting that training began.
-                fit_model = FitModelUnit(
-                    optimizer={
-                        "component": run.optimizer_name,
-                        "params": run.optimizer_parameters,
-                    },
-                    goal_metric=run.goal_metric,
-                )
-                fit_model.validate(ctx)
-
->>>>>>> 28a352cb8f3a4434ec366ec3619f4b82bfc49d1e
                 try:
                     run.set_status_as_started()
                     db.commit()
@@ -211,7 +149,6 @@ class ModelJob(BaseJob):
                     ) from e
 
                 self.report_progress(0.2, "Training")
-<<<<<<< HEAD
                 try:
                     # Hyperparameter Tunning
                     plot_paths = []
@@ -234,17 +171,6 @@ class ModelJob(BaseJob):
                     raise JobError(
                         f"Model training and evaluation failed {e}",
                     ) from e
-=======
-
-                fit_model(ctx)
-
-                plot_paths = ctx.require("plot_paths")
-
-                if ctx.has("best_parameters"):
-                    run.parameters = ctx.get("best_parameters")
-                    flag_modified(run, "parameters")
-                    db.commit()
->>>>>>> 28a352cb8f3a4434ec366ec3619f4b82bfc49d1e
 
                 try:
                     paths = plot_paths + [None] * (4 - len(plot_paths))
@@ -261,20 +187,23 @@ class ModelJob(BaseJob):
                         f"Hyperparameter plot path saving failed {e}",
                     ) from e
 
-<<<<<<< HEAD
-=======
-                self.report_progress(0.85, "Computing metrics")
-                EvaluateModelUnit()(ctx)
-
->>>>>>> 28a352cb8f3a4434ec366ec3619f4b82bfc49d1e
                 self.report_progress(0.95, "Saving model")
-                SaveModelUnit()(ctx)
+                try:
+                    run_path = os.path.join(config["RUNS_PATH"], str(run.id))
+                    model.save(run_path)
+                except Exception as e:
+                    log.exception(e)
+                    raise JobError(
+                        "Model saving failed",
+                    ) from e
 
                 try:
-                    run.run_path = ctx.require("model_path")
+                    run.run_path = run_path
                     db.commit()
                 except exc.SQLAlchemyError as e:
                     log.exception(e)
+                    run.set_status_as_error()
+                    db.commit()
                     raise JobError(
                         "Connection with the database failed",
                     ) from e
@@ -292,7 +221,6 @@ class ModelJob(BaseJob):
                 db.commit()
                 raise e
             finally:
-                ctx.clear_cache()
                 gc.collect()
 
     def _prepare_dataset_and_components(
