@@ -68,12 +68,11 @@ class EvaluationStrategySchema(BaseSchema):
 class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
     """Abstract base class defining the interface for model evaluation strategies.
 
-    Concrete implementations (``CrossValidationEvaluationStrategy``,
-    ``HoldoutEvaluationStrategy``) inherit from this class and provide
+    Concrete implementations (e.g., CrossValidationEvaluationStrategy,
+    HoldoutEvaluationStrategy) inherit from this class and provide
     specific strategies for model evaluation and, when configured, HPO.
     """
 
-    TYPE: Final[str] = "EvaluationStrategy"
     SCHEMA = EvaluationStrategySchema
 
     REQUIRES = (
@@ -136,6 +135,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
 
         self._goal_metric = goal_metric
         self._optimizer = optimizer
+        
         return optimizer, goal_metric
 
     def set_progress_reporter(
@@ -173,8 +173,8 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
         ----------
         ctx : ExecutionContext
             The shared execution context. ``x``/``y`` shape depends on the
-            splitter that ran upstream: a single train/validation/test dict
-            for holdout, a list of per-fold dicts for cross-validation.
+            splitter that ran upstream: a single DatasetDict for holdout, 
+            a list of per-fold DatasetDict for cross-validation.
         """
         raise NotImplementedError("Subclasses must implement this method")
 
@@ -182,14 +182,19 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
     def evaluate(self, model: BaseModel, x, y, metric, **kwargs):
         """Evaluate the model on the given data and return the score.
 
-        Called by the optimizer as the HPO objective function. Different
-        strategies compute this differently (e.g. across CV folds or on a
-        single validation split).
+        This method is called during hyperparameter optimization to compute
+        the objective function value for a given set of hyperparameters.
+        Different strategies may compute metrics differently (e.g., across CV folds
+        or on a validation split).
         """
         raise NotImplementedError("Subclasses must implement this method")
 
     def _do_hpo(self, ctx: ExecutionContext) -> None:
-        """Execute hyperparameter optimization using the configured optimizer."""
+        """Execute hyperparameter optimization using the configured optimizer.
+        
+        The optimizer uses the self.evaluate method as the objective function,
+        allowing each strategy to define its own evaluation logic.
+        """
         optimizer, goal_metric = self._resolve_search()
 
         optimizer.optimize(
@@ -216,7 +221,22 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
         ctx.put("model", model)
 
     def _generate_hpo_plots(self, ctx: ExecutionContext) -> List[str]:
-        """Generate and pickle the hyperparameter optimization plots to disk."""
+        """Generate and pickle the hyperparameter optimization plots to disk.
+
+        Shared by every evaluation strategy that runs HPO, so the plot
+        generation logic only needs to be maintained in one place.
+
+        Parameters
+        ----------
+        ctx : ExecutionContext
+            The shared execution context.
+
+        Returns
+        -------
+        list[str]
+            Paths to the pickled plot files, in the order produced by the
+            optimizer.
+        """
         import os
         import pickle
 

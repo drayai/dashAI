@@ -15,9 +15,16 @@ class HoldoutEvaluationStrategy(BaseEvaluationStrategy):
     def execute(self, ctx: ExecutionContext) -> None:
         """Train on the training set, optionally optimize with the validation
         set.
+        
+        Trains a model on the training partition and optionally performs hyperparameter
+        optimization using the validation set. Finally evaluates the trained model on
+        all three partitions (train, validation, test) and returns the model with plots.
 
-        ``x``/``y`` are the ``{"train": ..., "validation": ..., "test": ...}``
-        dicts produced by the holdout splitter.
+        Parameters
+        ----------
+        ctx : ExecutionContext
+            The shared execution context. 
+            ``x``/``y`` are the DatasetDict's produced by the holdout splitter.
         """
         x = ctx.require("x")
         y = ctx.require("y")
@@ -46,6 +53,24 @@ class HoldoutEvaluationStrategy(BaseEvaluationStrategy):
 
         Used as the objective function during hyperparameter optimization:
         trains on the training set and scores on the validation set.
+        
+        Parameters
+        ----------
+        model : BaseModel
+            The model instance to evaluate with specific hyperparameters.
+        input_dataset : DatasetDict
+            DatasetDict with data partitions
+            {"train": X_train, "validation": X_val, "test": X_test}.
+        output_dataset : DatasetDict
+            DatasetDict with label partitions
+            {"train": y_train, "validation": y_val, "test": y_test}.
+        metric : Metric
+            The metric class to compute on predictions.
+
+        Returns
+        -------
+        float
+            The metric score value for this hyperparameter combination.
         """
         from DashAI.back.core.enums.metrics import LevelEnum, SplitEnum
 

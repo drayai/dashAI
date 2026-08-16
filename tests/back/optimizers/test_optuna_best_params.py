@@ -66,15 +66,16 @@ def _optimize(model, parameters, dataset, n_trials=12):
     # Define the strategy function that will be used to evaluate the model
     # during optimization
     def strategy(model, input_dataset, output_dataset, metric):
+        model.x_data = input_dataset
+        model.y_data = output_dataset
         model.train(input_dataset["train"], output_dataset["train"])
         y_pred = model.predict(input_dataset["validation"])
         output_dataset_transformed = model.prepare_output(
             output_dataset["validation"], is_fit=False
         )
-        score = metric.score(output_dataset_transformed, y_pred)
-        return score
+        return metric.score(output_dataset_transformed, y_pred)
 
-    _, _ = optimizer.optimize(
+    optimizer.optimize(
         model,
         dataset,
         dataset,
