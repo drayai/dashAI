@@ -152,10 +152,18 @@ class OptunaOptimizer(BaseOptimizer):
         Optimization process
 
         Args:
-            model (class): class for the model from the current experiment
-            dataset (dict): dict with the data to train and validation
-            parameters (dict): dict with the information to create the search space
-            metric (class): class for the metric to optimize
+        model (class):
+            class for the model from the current experiment
+        input_dataset (dict | list[dict]):
+            dict with training dataset
+        output_dataset (dict | list[dict]):
+            dict with the labels for the training data
+        parameters (dict):
+            dict with the information to create the search space
+        metric (class):
+            class for the metric to optimize
+        strategy (function):
+            function to evaluate the model (e.g. cross-validation)
 
         Returns
         -------
@@ -210,9 +218,6 @@ class OptunaOptimizer(BaseOptimizer):
                 setattr(obj, key, best_params[key])
 
         self.study = study
-        best_model = self.model
-
-        return best_model, best_params
 
     def get_model(self):
         return self.model

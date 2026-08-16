@@ -137,16 +137,22 @@ class HyperOptOptimizer(BaseOptimizer):
         Optimization process
 
         Args:
-            model (class): class for the model from the current experiment
-            input_dataset (dict): dict with train dataset
-            output_dataset (dict): dict with validation dataset
-            parameters (dict): dict with the information to create the search space
-            metric (class): class for the metric to optimize
-            strategy (function): function to evaluate the model (e.g. cross-validation)
+        model (class):
+            class for the model from the current experiment
+        input_dataset (dict | list[dict]):
+            dict with training dataset
+        output_dataset (dict | list[dict]):
+            dict with the labels for the training data
+        parameters (dict):
+            dict with the information to create the search space
+        metric (class):
+            class for the metric to optimize
+        strategy (function):
+            function to evaluate the model (e.g. cross-validation)
 
         Returns
         -------
-            tuple: (best_model, best_params)
+            None
         """
         import importlib
 
@@ -161,17 +167,19 @@ class HyperOptOptimizer(BaseOptimizer):
 
         sampler = importlib.import_module(f"hyperopt.{self.sampler}").suggest
 
-        param_mapping = {key: (obj, key) for obj, key, _, _ in self.parameters}
+        param_mapping = {
+            key: (obj, key, dtype) for obj, key, _, dtype in self.parameters
+        }
 
         search_space = self.search_space(self.parameters)
 
         def objective(params):
             for param_name, value in params.items():
-                obj, key = param_mapping[param_name]
-                # hp.quniform returns floats; cast to int for integer parameters
-                dtype = next(d for _, k, _, d in self.parameters if k == param_name)
+                obj, key, dtype = param_mapping[param_name]
                 if dtype == "integer":
                     value = int(value)
+                elif dtype == "number":
+                    value = float(value)
                 setattr(obj, key, value)
 
             # Delegate evaluation entirely to strategy, identical to Optuna
@@ -183,7 +191,7 @@ class HyperOptOptimizer(BaseOptimizer):
             return -score if self._maximize else score
 
         trials = Trials()
-        fmin(
+        best_params_raw = fmin(
             fn=objective,
             space=search_space,
             algo=sampler,
@@ -192,15 +200,11 @@ class HyperOptOptimizer(BaseOptimizer):
         )
         self.trials = trials
 
-        # Apply best parameters to model, mirroring Optuna's post-study setattr loop
-        best_params = self.get_best_params()
-        best_model = self.model
-        for hyperparameter, value in best_params.items():
-            setattr(best_model, hyperparameter, value)
-
-        self.model = best_model
-
-        return best_model, best_params
+        # Apply best params and retrain with the best configuration
+        for param_name, raw_value in best_params_raw.items():
+            obj, key, dtype = param_mapping[param_name]
+            value = int(raw_value) if dtype == "integer" else float(raw_value)
+            setattr(obj, key, value)
 
     def get_model(self):
         return self.model
@@ -210,22 +214,22 @@ class HyperOptOptimizer(BaseOptimizer):
         for trial in self.trials:
             if trial["result"]["status"] == "ok":
                 params = {key: val[0] for key, val in trial["misc"]["vals"].items()}
-                # Restore the original sign so the reported value matches the
-                # actual metric score, consistent with Optuna's trial.value
-                raw_loss = trial["result"]["loss"]
-                value = -raw_loss if self._maximize else raw_loss
+                loss = trial["result"]["loss"]
+                value = -loss if self.maximize else loss
                 trials.append({"params": params, "value": value})
         return trials
 
     def get_best_params(self):
         """Return the best parameters found during optimization."""
         best_trial = min(
-            self.trials,
-            key=lambda t: t["result"].get("loss", float("inf")),
+            self.trials, key=lambda t: t["result"].get("loss", float("inf"))
         )
-        params = {key: val[0] for key, val in best_trial["misc"]["vals"].items()}
-        # Cast integer parameters back to int (hp.quniform returns floats)
-        for _, hyperparameter, _, dtype in self.parameters:
-            if dtype == "integer" and hyperparameter in params:
-                params[hyperparameter] = int(params[hyperparameter])
-        return params
+        param_mapping = {
+            key: (obj, key, dtype) for obj, key, _, dtype in self.parameters
+        }
+        result = {}
+        for key, vals in best_trial["misc"]["vals"].items():
+            raw = vals[0]
+            dtype = param_mapping[key][2]
+            result[key] = int(raw) if dtype == "integer" else float(raw)
+        return result

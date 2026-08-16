@@ -1,57 +1,142 @@
-import os
-import pickle
+import logging
 from abc import ABCMeta, abstractmethod
-from typing import Callable, Final, List, Optional
+from typing import TYPE_CHECKING, Callable, Final, List, Optional
 
-from kink import di
-
-from DashAI.back.core.artifacts import normalize_artifacts
-from DashAI.back.dependencies.database.models import Run
+from DashAI.back.core.schema_fields import (
+    BaseSchema,
+    component_field,
+    schema_field,
+    string_field,
+)
+from DashAI.back.core.utils import MultilingualString
+from DashAI.back.job.base_job import JobError
 from DashAI.back.models.base_model import BaseModel
 from DashAI.back.models.model_factory import ModelFactory
-from DashAI.back.optimizers.base_optimizer import BaseOptimizer
+from DashAI.back.units.base_unit import BaseUnit
+from DashAI.back.units.context import ExecutionContext
+
+if TYPE_CHECKING:
+    from DashAI.back.optimizers.base_optimizer import BaseOptimizer
+
+log = logging.getLogger(__name__)
 
 
-class BaseEvaluationStrategy(metaclass=ABCMeta):
+class EvaluationStrategySchema(BaseSchema):
+    optimizer: schema_field(
+        component_field(parent="BaseOptimizer"),
+        placeholder=None,
+        description=MultilingualString(
+            en="Optimizer used to search for hyperparameters. Only used when "
+            "the model declares optimizable parameters. Omit for no HPO.",
+            es="Optimizador usado para buscar hiperparámetros. Solo se usa "
+            "cuando el modelo declara parámetros optimizables. Omitir "
+            "para no hacer HPO.",
+            pt="Otimizador usado para procurar hiperparâmetros. Só é usado "
+            "quando o modelo declara parâmetros otimizáveis.",
+            de="Optimierer für die Hyperparametersuche. Wird nur verwendet, "
+            "wenn das Modell optimierbare Parameter deklariert.",
+            zh="用于搜索超参数的优化器。仅当模型声明了可优化参数时使用。",
+        ),
+        alias=MultilingualString(
+            en="Optimizer",
+            es="Optimizador",
+            pt="Otimizador",
+            de="Optimierer",
+            zh="优化器",
+        ),
+    )  # type: ignore
+    goal_metric: schema_field(
+        string_field(),
+        placeholder="Accuracy",
+        description=MultilingualString(
+            en="Metric the hyperparameter search optimizes.",
+            es="Métrica que optimiza la búsqueda de hiperparámetros.",
+            pt="Métrica que a procura de hiperparâmetros otimiza.",
+            de="Metrik, die die Hyperparametersuche optimiert.",
+            zh="超参数搜索所优化的指标。",
+        ),
+        alias=MultilingualString(
+            en="Goal metric",
+            es="Métrica objetivo",
+            pt="Métrica objetivo",
+            de="Zielmetrik",
+            zh="目标指标",
+        ),
+    )  # type: ignore
+
+
+class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
     """Abstract base class defining the interface for model evaluation strategies.
 
-    Concrete implementations (e.g., CrossValidationEvaluationStrategy,
-    HoldoutEvaluationStrategy) inherit from this class and provide specific
-    strategies for model evaluation.
+    Concrete implementations (``CrossValidationEvaluationStrategy``,
+    ``HoldoutEvaluationStrategy``) inherit from this class and provide
+    specific strategies for model evaluation and, when configured, HPO.
     """
 
     TYPE: Final[str] = "EvaluationStrategy"
+    SCHEMA = EvaluationStrategySchema
 
-    def __init__(
-        self,
-        model: BaseModel,
-        optimizer: BaseOptimizer,
-        run_optimizable_parameters,
-        goal_metric,
-        **kwargs,
-    ):
-        """Initialize the evaluation strategy with model and optimization configuration.
+    REQUIRES = (
+        "model",
+        "factory",
+        "optimizable_parameters",
+        "model_parameters",
+        "x",
+        "y",
+        "run_id",
+    )
+    PROVIDES = ("model", "plot_paths")
 
-        Parameters
-        ----------
-        model : BaseModel
-            The machine learning model to be trained and evaluated.
-        optimizer : BaseOptimizer
-            The hyperparameter optimizer instance. Can be None if no HPO is needed.
-        run_optimizable_parameters : dict or list
-            The hyperparameters that should be optimized.
-        goal_metric : dict (obtained from Metric component registry)
-            The target metric to optimize during hyperparameter search.
-        **kwargs
-            Additional keyword arguments passed from subclasses (ignored).
-        """
-        self.model: BaseModel = model
-        self.optimizer: BaseOptimizer = optimizer
-        self.run_optimizable_parameters = run_optimizable_parameters
-        self.goal_metric = goal_metric
+    def __init__(self, **config) -> None:
+        super().__init__(**config)
+        self._optimizer = None
+        self._goal_metric = None
         self._progress_reporter: Optional[
             Callable[[Optional[float], Optional[str]], None]
         ] = None
+
+    def _resolve_search(self):
+        """Resolve the optimizer and the goal metric, memoized on this unit.
+
+        Kept on the instance rather than in the context on purpose. These are
+        this unit's own state, not something it hands to another unit: two
+        ``FitModelUnit`` instances sharing a context — a DAG with two training
+        nodes — would otherwise overwrite each other's optimizer, and the
+        second one would silently run the first one's.
+        """
+        if self._optimizer is not None:
+            return self._optimizer, self._goal_metric
+
+        from kink import di
+
+        component_registry = di["component_registry"]
+        goal_metric_name: str = self.config["goal_metric"]
+        optimizer_name: str = self.config["optimizer"]["component"]
+
+        try:
+            # The whole registry entry, not the class: the optimizer reads
+            # metadata["maximize"] from it to pick a direction.
+            goal_metric = component_registry[goal_metric_name]
+        except Exception as e:
+            log.exception(e)
+            raise JobError(
+                f"Metric is not compatible with the Task. {e}",
+            ) from e
+
+        try:
+            optimizer_class = component_registry[optimizer_name]["class"]
+            optimizer: "BaseOptimizer" = optimizer_class(
+                **self.config["optimizer"]["params"]
+            )
+        except Exception as e:
+            log.exception(e)
+            raise JobError(
+                f"Error instantiating optimizer {optimizer_name}, {e}",
+            ) from e
+
+        self._goal_metric = goal_metric
+        self._optimizer = optimizer
+        return optimizer, goal_metric
 
     def set_progress_reporter(
         self,
@@ -67,149 +152,118 @@ class BaseEvaluationStrategy(metaclass=ABCMeta):
         if self._progress_reporter is not None:
             self._progress_reporter(fraction, message)
 
-    @abstractmethod
-    def execute(self, x, y, factory: ModelFactory, run: Run, db):
-        """Execute the evaluation strategy on the provided data.
+    def validate(self, ctx: ExecutionContext) -> None:
+        # ctx.require, not ctx.get: "optimizable_parameters" is one of this
+        # unit's REQUIRES, so its absence means BuildModelUnit hasn't run yet
+        # — a call-order mistake, not "there is nothing to optimize". Only an
+        # empty value (the key present, genuinely no optimizable parameters)
+        # skips the optimizer/goal-metric checks below, so no registry lookup
+        # is needed either.
+        if not ctx.require("optimizable_parameters"):
+            return
 
-        This is the main entry point for the evaluation process. Subclasses implement
-        strategy-specific logic for:
-        - Model training across folds/splits
-        - Metric computation and persistence
-        - HPO execution and result handling
+        self._resolve_search()
+
+    @abstractmethod
+    def execute(self, ctx: ExecutionContext) -> None:
+        """Do the evaluation strategy's work: train, optionally run HPO, and
+        put ``model`` and ``plot_paths`` back onto the context.
 
         Parameters
         ----------
-        x : DatasetDict or list of DastasetDict
-            Input features. Structure depends on the evaluation strategy:
-            - For holdout: DatasetDict with train/validation/test splits
-            - For CV: List of DatasetDicts, one per fold with train/test splits
-        y : dict or list
-            Target labels. Same structure as x.
-        factory : ModelFactory
-            Factory for creating and updating model instances.
-        run : Run
-            Database model representing the current experiment run.
-        db : Session
-            SQLAlchemy database session for persisting results.
-
-        Returns
-        -------
-        tuple
-            (trained_model, plot_paths) where:
-            - trained_model : BaseModel - The trained model after evaluation
-            - plot_paths : list[str] - Paths to generated HPO visualization files
+        ctx : ExecutionContext
+            The shared execution context. ``x``/``y`` shape depends on the
+            splitter that ran upstream: a single train/validation/test dict
+            for holdout, a list of per-fold dicts for cross-validation.
         """
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
-    def evaluate(self, model: BaseModel, x, y, metric):
+    def evaluate(self, model: BaseModel, x, y, metric, **kwargs):
         """Evaluate the model on the given data and return the score.
 
-        This method is called during hyperparameter optimization to compute
-        the objective function value for a given set of hyperparameters.
-        Different strategies may compute metrics differently (e.g., across CV folds
-        or on a validation split).
-
-        Parameters
-        ----------
-        model : BaseModel
-            The model instance to evaluate.
-        x : DatasetDict or list of DastasetDict
-            Input features for evaluation (structure depends on strategy).
-        y : DatasetDict or list of DastasetDict
-            Target labels for evaluation (structure depends on strategy).
-        metric : Metric
-            The metric instance to compute.
-
-        Returns
-        -------
-        float
-            The computed metric value used as the optimization objective.
+        Called by the optimizer as the HPO objective function. Different
+        strategies compute this differently (e.g. across CV folds or on a
+        single validation split).
         """
         raise NotImplementedError("Subclasses must implement this method")
 
-    def _do_hpo(self, x, y, factory: ModelFactory, run: Run, db):
-        """Execute hyperparameter optimization using the configured optimizer.
+    def _do_hpo(self, ctx: ExecutionContext) -> None:
+        """Execute hyperparameter optimization using the configured optimizer."""
+        optimizer, goal_metric = self._resolve_search()
 
-        The optimizer uses the self.evaluate method as the objective function,
-        allowing each strategy to define its own evaluation logic.
-
-        Parameters
-        ----------
-        x : DatasetDict or list of DatasetDict
-            Training input features (structure varies by strategy).
-        y : DatasetDict or list of DatasetDict
-            Training target labels (structure varies by strategy).
-        factory : ModelFactory
-            Factory instance for updating model parameters.
-        run : Run
-            Database run instance to update with optimized parameters.
-        db : Session
-            SQLAlchemy database session for transactions.
-
-        """
-        from sqlalchemy.orm.attributes import flag_modified
-
-        # Execute hyperparameter optimization and get best model with parameters
-        self.model, best_params = self.optimizer.optimize(
-            self.model,
-            x,
-            y,
-            self.run_optimizable_parameters,
-            self.goal_metric,
+        optimizer.optimize(
+            ctx.require("model"),
+            ctx.require("x"),
+            ctx.require("y"),
+            ctx.require("optimizable_parameters"),
+            goal_metric,
             strategy=self.evaluate,
         )
 
-        # Update the run's parameters with the optimized hyperparameters
-        old_parameters = run.parameters.copy()
-        updated_parameters = factory.update_parameters(old_parameters, best_params)
+        model = optimizer.get_model()
+        best_params = optimizer.get_best_params()
 
-        # Persist the updated parameters to the database
-        run.parameters = updated_parameters
-        flag_modified(run, "parameters")
-        db.commit()
+        self._assert_model_keeps_its_runtime_state(model, ctx.require("run_id"))
 
-    def _generate_hpo_plots(self, run: Run) -> List[str]:
-        """Generate and pickle the hyperparameter optimization plots to disk.
-
-        Shared by every evaluation strategy that runs HPO, so the plot
-        generation logic only needs to be maintained in one place.
-
-        Parameters
-        ----------
-        run : Run
-            The run the plots belong to (used for the plot filenames).
-
-        Returns
-        -------
-        list[str]
-            Paths to the pickled plot files, in the order produced by the
-            optimizer.
-        """
-        config = di["config"]
-        plot_paths: List[str] = []
-
-        # Retrieve optimization trial data from the optimizer
-        trials = self.optimizer.get_trials_values()
-
-        # Generate plot visualizations from the trial data
-        # Plots typically show parameter importance, optimization history, etc.
-        plot_filenames, plots = self.optimizer.create_plots(
-            trials,
-            run.id,
-            n_params=len(self.run_optimizable_parameters),
-            goal_metric=self.goal_metric,
+        factory: ModelFactory = ctx.require("factory")
+        old_parameters = ctx.require("model_parameters")
+        ctx.put_ref(
+            "best_parameters",
+            factory.update_parameters(old_parameters, best_params),
         )
 
-        # Convert plots to serializable format (handles special objects, arrays, etc.)
+        ctx.put("model", model)
+
+    def _generate_hpo_plots(self, ctx: ExecutionContext) -> List[str]:
+        """Generate and pickle the hyperparameter optimization plots to disk."""
+        import os
+        import pickle
+
+        from kink import di
+
+        from DashAI.back.core.artifacts import normalize_artifacts
+
+        config = di["config"]
+        optimizer = self._optimizer
+        run_id = ctx.require("run_id")
+        plot_paths: List[str] = []
+
+        trials = optimizer.get_trials_values()
+
+        plot_filenames, plots = optimizer.create_plots(
+            trials,
+            run_id,
+            n_params=len(ctx.require("optimizable_parameters")),
+            goal_metric=ctx.require("goal_metric"),
+        )
+
         normalized_plots = normalize_artifacts(plots)
 
-        # Serialize and persist each plot to disk
         for filename, plot in zip(plot_filenames, normalized_plots, strict=False):
             plot_path = os.path.join(config["RUNS_PATH"], filename)
-            # Serialize the plot object using pickle and write to disk
             with open(plot_path, "wb") as file:
                 pickle.dump(plot, file)
                 plot_paths.append(plot_path)
 
         return plot_paths
+
+    @staticmethod
+    def _assert_model_keeps_its_runtime_state(model, run_id) -> None:
+        """Fail loudly if the optimizer returned a model that cannot log metrics.
+
+        ``ModelFactory`` attaches the run id, the data splits and the metric
+        classes to the model instance, and optimizers are expected to return
+        that same instance. If one ever returns a fresh object instead,
+        ``calculate_metrics`` would return early and the run would finish with
+        no metrics at all instead of failing.
+        """
+        if run_id is None:
+            return
+
+        if getattr(model, "run_id", None) is None:
+            raise JobError(
+                "The optimizer returned a model detached from its run: metrics "
+                "could not be computed for it. Optimizers must return the same "
+                "model instance they received."
+            )

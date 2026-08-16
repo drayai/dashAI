@@ -72,19 +72,26 @@ class EvaluateModelUnit(BaseUnit):
         # so the unit would "succeed" having written nothing.
         run_id = ctx.require("run_id")
         splits = [SplitEnum[name] for name in self.config.get("splits", DEFAULT_SPLITS)]
+        level = self.config.get("level", LevelEnum.LAST)
+        fold_index = self.config.get("fold_index", None)
 
         try:
             for split in splits:
                 with session_factory() as db:
                     already_logged = (
                         db.query(Metric)
-                        .filter_by(run_id=run_id, split=split, level=LevelEnum.LAST)
+                        .filter_by(
+                            run_id=run_id,
+                            split=split,
+                            level=level,
+                            fold_index=fold_index,
+                        )
                         .first()
                     )
                 if already_logged:
                     continue
 
-                model.calculate_metrics(split=split, level=LevelEnum.LAST)
+                model.calculate_metrics(split=split, level=level)
         except Exception as e:
             log.exception(e)
             raise JobError(

@@ -1,4 +1,4 @@
-"""Unit that prepares a dataset for a task and splits it into train/val/test."""
+"""Unit that prepares a dataset for a task and splits it using a BaseSplitter."""
 
 import logging
 from typing import TYPE_CHECKING
@@ -11,6 +11,7 @@ from DashAI.back.core.schema_fields import (
 )
 from DashAI.back.core.utils import MultilingualString
 from DashAI.back.job.base_job import JobError
+from DashAI.back.splitters.base_splitter import BaseSplitter
 from DashAI.back.units.base_unit import BaseUnit
 from DashAI.back.units.context import ExecutionContext
 
@@ -74,21 +75,25 @@ class PrepareAndSplitSchema(BaseSchema):
     splits: schema_field(
         dict,
         placeholder={
-            "splitType": "random",
+            "splitter_name": "HoldoutSplitter",
+            "random_state": 42,
+            "shuffle": True,
             "train": 0.7,
             "test": 0.1,
             "validation": 0.2,
         },
         description=MultilingualString(
-            en="Split configuration: a split type plus either train/test/"
-            "validation index lists or proportions.",
-            es="Configuración de partición: un tipo de partición y listas de "
-            "índices o proporciones para entrenamiento/prueba/validación.",
-            pt="Configuração de divisão: um tipo de divisão e listas de "
-            "índices ou proporções para treino/teste/validação.",
-            de="Split-Konfiguration: ein Split-Typ sowie entweder Index-"
-            "Listen oder Anteile für Training/Test/Validierung.",
-            zh="划分配置：划分类型，以及训练/测试/验证的索引列表或比例。",
+            en="Split configuration: the name of a registered Splitter plus its "
+            "own parameters (e.g. proportions for holdout, n_splits for "
+            "k-fold).",
+            es="Configuración de partición: el nombre de un Splitter registrado "
+            "más sus propios parámetros (p. ej. proporciones para holdout, "
+            "n_splits para k-fold).",
+            pt="Configuração de divisão: o nome de um Splitter registado mais "
+            "os seus próprios parâmetros.",
+            de="Split-Konfiguration: der Name eines registrierten Splitters "
+            "plus dessen eigene Parameter.",
+            zh="划分配置：已注册 Splitter 的名称及其自身参数。",
         ),
         alias=MultilingualString(
             en="Splits",
@@ -101,10 +106,17 @@ class PrepareAndSplitSchema(BaseSchema):
 
 
 class PrepareAndSplitUnit(BaseUnit):
-    """Validate a dataset against a task and split it into train/val/test.
+    """Validate a dataset against a task and split it using a registered Splitter.
 
-    Runs the task's own validation, counts the labels, applies the requested
-    split configuration and separates features from targets.
+    Runs the task's own validation, counts the labels, and delegates the
+    actual partitioning to whichever ``BaseSplitter`` is named in
+    ``splits["splitter_name"]`` (holdout, k-fold, repeated k-fold, etc.).
+
+    ``x``/``y`` end up with a shape that depends on the chosen splitter: a
+    single ``{"train", "validation", "test"}`` dict for holdout, a list of
+    per-fold dicts for cross-validation. Downstream units (``BuildModelUnit``,
+    the evaluation strategies) are the ones that know which shape to expect,
+    so this unit does not normalize it.
     """
 
     SCHEMA = PrepareAndSplitSchema
@@ -115,18 +127,14 @@ class PrepareAndSplitUnit(BaseUnit):
     def execute(self, ctx: ExecutionContext) -> None:
         from kink import di
 
-        from DashAI.back.dataloaders.classes.dashai_dataset import (
-            prepare_for_model_session,
-            select_columns,
-            split_dataset,
-        )
+        from DashAI.back.dataloaders.classes.dashai_dataset import select_columns
 
         component_registry = di["component_registry"]
 
         task_name: str = self.config["task_name"]
         input_columns = self.config["input_columns"]
         output_columns = self.config["output_columns"]
-        splits = self.config["splits"]
+        splits_data = self.config["splits"]
 
         loaded_dataset = ctx.require("dataset")
 
@@ -146,31 +154,35 @@ class PrepareAndSplitUnit(BaseUnit):
             )
             n_labels = task.num_labels(prepared_dataset, output_columns[0])
 
-            prepared_dataset, splits = prepare_for_model_session(
-                dataset=prepared_dataset,
-                splits=splits,
-                output_columns=output_columns,
-            )
-
-            split_indexes = {
-                "train_indexes": splits["train_indexes"],
-                "test_indexes": splits["test_indexes"],
-                "val_indexes": splits["val_indexes"],
-            }
-
-            x, y = select_columns(
+            X, Y = select_columns(
                 prepared_dataset,
                 input_columns,
                 output_columns,
             )
-
-            x = split_dataset(x)
-            y = split_dataset(y)
-
         except Exception as e:
             log.exception(e)
             raise JobError(
                 f"Can not prepare Dataset {ctx.get('dataset_id')} for Task {task_name}",
+            ) from e
+
+        try:
+            splitter_name = splits_data.get("splitter_name", None)
+            splitter: BaseSplitter = component_registry[splitter_name]["class"](
+                splits_data=splits_data,
+            )
+        except Exception as e:
+            log.exception(e)
+            raise JobError(
+                f"Unable to find Splitter with name {splitter_name} in registry.",
+            ) from e
+
+        try:
+            x, y, split_indexes = splitter.split(X, Y)
+        except Exception as e:
+            log.exception(e)
+            raise JobError(
+                f"Error splitting Dataset {ctx.get('dataset_id')} "
+                f"with Splitter {splitter_name}: {e}",
             ) from e
 
         ctx.put_ref("task_name", task_name)

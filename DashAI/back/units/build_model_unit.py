@@ -1,4 +1,4 @@
-"""Unit that instantiates a model with its parameters, data and metrics."""
+"""Unit that instantiates a model with its parameters and metrics."""
 
 import logging
 from typing import TYPE_CHECKING, List
@@ -98,10 +98,12 @@ class BuildModelSchema(BaseSchema):
 
 
 class BuildModelUnit(BaseUnit):
-    """Instantiate an untrained model bound to its data and metrics.
+    """Instantiate an untrained model bound to its run id and metrics.
 
-    ``ModelFactory`` attaches the run id, the data splits and the metric
-    classes to the model instance, which is what later lets the model log
+    ``ModelFactory`` attaches the run id and the metric
+    classes to the model instance. However, Data is assigned by the
+    evaluation strategy right before training
+    (``model.x_data``/``model.y_data``) which is what later lets the model log
     metrics on its own during and after training. The metrics are configured
     here rather than in the evaluation unit because models use them *while*
     training to log at the step and epoch levels.
@@ -120,7 +122,11 @@ class BuildModelUnit(BaseUnit):
 
     SCHEMA = BuildModelSchema
 
-    REQUIRES = ("x", "y", "n_labels")
+    # run_id and task_name only appear in the ModelFactory call and in error
+    # messages, but they are declared all the same: a key read without being
+    # declared is invisible to any caller — and to any future DAG validator —
+    # that inspects REQUIRES instead of running the unit.
+    REQUIRES = ("n_labels", "run_id", "task_name")
     PROVIDES = ("model", "factory", "optimizable_parameters", "model_parameters")
 
     def __init__(self, **config) -> None:
@@ -195,6 +201,9 @@ class BuildModelUnit(BaseUnit):
         component_registry = di["component_registry"]
 
         parameters = self.model_parameters
+        run_id = ctx.require("run_id")
+        task_name = ctx.require("task_name")
+        n_labels = ctx.require("n_labels")
 
         model_class = self._resolve_model_class()
 
@@ -212,21 +221,18 @@ class BuildModelUnit(BaseUnit):
         except Exception as e:
             log.exception(e)
             raise JobError(
-                "Unable to find metrics associated with"
-                f"Task {ctx.get('task_name')} in registry",
+                f"Unable to find metrics associated with Task {task_name} in registry",
             ) from e
 
         try:
             factory = ModelFactory(
-                model_class,
-                parameters,
-                ctx.get("run_id"),
-                ctx.require("x"),
-                ctx.require("y"),
-                train_metrics,
-                validation_metrics,
-                test_metrics,
-                n_labels=ctx.require("n_labels"),
+                model=model_class,
+                params=parameters,
+                run_id=run_id,
+                train_metrics=train_metrics,
+                validation_metrics=validation_metrics,
+                test_metrics=test_metrics,
+                n_labels=n_labels,
             )
             model: "BaseModel" = factory.model
         except Exception as e:
