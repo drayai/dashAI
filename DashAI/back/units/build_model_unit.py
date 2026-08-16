@@ -238,7 +238,7 @@ class BuildModelUnit(BaseUnit):
         except Exception as e:
             log.exception(e)
             raise JobError(
-                f"Unable to instantiate model using run {ctx.get('run_id')}",
+                f"Unable to instantiate model using run {run_id}",
             ) from e
 
         # The original tree is what the search unit rewrites with the best

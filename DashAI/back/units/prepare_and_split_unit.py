@@ -121,8 +121,11 @@ class PrepareAndSplitUnit(BaseUnit):
 
     SCHEMA = PrepareAndSplitSchema
 
-    REQUIRES = ("dataset",)
-    PROVIDES = ("x", "y", "n_labels", "task", "split_indexes")
+    # dataset_id is declared even though it only decorates an error message:
+    # an undeclared read is a contract a DAG validator cannot see, and the
+    # loaders publish it precisely so downstream units can name their input.
+    REQUIRES = ("dataset", "dataset_id")
+    PROVIDES = ("x", "y", "n_labels", "task", "split_indexes", "task_name")
 
     def execute(self, ctx: ExecutionContext) -> None:
         from kink import di
@@ -137,6 +140,7 @@ class PrepareAndSplitUnit(BaseUnit):
         splits_data = self.config["splits"]
 
         loaded_dataset = ctx.require("dataset")
+        dataset_id = ctx.require("dataset_id")
 
         try:
             task: "BaseTask" = component_registry[task_name]["class"]()
@@ -162,7 +166,7 @@ class PrepareAndSplitUnit(BaseUnit):
         except Exception as e:
             log.exception(e)
             raise JobError(
-                f"Can not prepare Dataset {ctx.get('dataset_id')} for Task {task_name}",
+                f"Can not prepare Dataset {dataset_id} for Task {task_name}",
             ) from e
 
         try:
