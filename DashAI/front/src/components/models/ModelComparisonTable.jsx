@@ -121,8 +121,7 @@ function ModelComparisonTable({
   // ────────────────────────────────────────────────────────────────────────
 
   const isCrossValidation =
-    selectedSession?.evaluation_strategy ===
-    "CrossValidationEvaluationStrategy";
+    selectedSession?.evaluation_strategy === "CrossValidationUnit";
 
   // Run type color using existing theme.palette.accent tokens
   const getRunType = (run) => {

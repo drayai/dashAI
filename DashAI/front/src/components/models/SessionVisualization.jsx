@@ -60,7 +60,7 @@ export default function SessionVisualization() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const isCrossValidation =
-    session?.evaluation_strategy === "CrossValidationEvaluationStrategy";
+    session?.evaluation_strategy === "CrossValidationUnit";
 
   // This component stays mounted across session navigations (same route,
   // different :sessionId), so metricSplit would otherwise carry over from

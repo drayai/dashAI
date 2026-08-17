@@ -258,7 +258,7 @@ function PrepareDatasetStep({
       evaluation_strategy: evaluationStrategy,
     };
 
-    if (evaluationStrategy === "HoldoutEvaluationStrategy") {
+    if (evaluationStrategy === "HoldoutUnit") {
       if (splitType === SPLIT_TYPES.MANUAL) {
         updatedExpData.splits = {
           ...rowsPartitionsIndex,
@@ -281,7 +281,7 @@ function PrepareDatasetStep({
           splitType: splitType,
         };
       }
-    } else if (evaluationStrategy === "CrossValidationEvaluationStrategy") {
+    } else if (evaluationStrategy === "CrossValidationUnit") {
       updatedExpData.splits = {
         splitter_name: cvType.name,
         seed: seed === "" || seed == null ? 42 : Number(seed),

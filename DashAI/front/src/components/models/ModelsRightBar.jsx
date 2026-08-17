@@ -213,8 +213,7 @@ export default function ModelsRightBar({ onToggle }) {
   const tourContext = useTourContext();
 
   // Determine if statistical tests should be shown (only for nested CV sessions)
-  const isCv =
-    session?.evaluation_strategy === "CrossValidationEvaluationStrategy";
+  const isCv = session?.evaluation_strategy === "CrossValidationUnit";
 
   useEffect(() => {
     if (!isCv) {

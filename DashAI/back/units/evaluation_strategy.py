@@ -1,6 +1,6 @@
 import logging
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Callable, Final, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 from DashAI.back.core.schema_fields import (
     BaseSchema,
@@ -65,12 +65,19 @@ class EvaluationStrategySchema(BaseSchema):
     )  # type: ignore
 
 
-class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
+class EvaluationStrategy(BaseUnit, metaclass=ABCMeta):
     """Abstract base class defining the interface for model evaluation strategies.
 
-    Concrete implementations (e.g., CrossValidationEvaluationStrategy,
-    HoldoutEvaluationStrategy) inherit from this class and provide
-    specific strategies for model evaluation and, when configured, HPO.
+    Concrete implementations (e.g., CrossValidationUnit, HoldoutUnit) inherit from
+    this class and provide specific strategies for model evaluation and, when
+    configured, HPO.
+
+    ``validate`` resolves the optimizer and the goal metric so an impossible
+    configuration is rejected before the job reports that training started.
+
+    The optimizer is configured as a component field, so its value is
+    ``{"component": <name>, "params": {...}}`` and the front renders the
+    chosen optimizer's own form underneath.
     """
 
     SCHEMA = EvaluationStrategySchema
@@ -99,7 +106,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
 
         Kept on the instance rather than in the context on purpose. These are
         this unit's own state, not something it hands to another unit: two
-        ``FitModelUnit`` instances sharing a context — a DAG with two training
+        ``EvaluationStrategy`` instances sharing a context — a DAG with two training
         nodes — would otherwise overwrite each other's optimizer, and the
         second one would silently run the first one's.
         """
@@ -135,7 +142,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
 
         self._goal_metric = goal_metric
         self._optimizer = optimizer
-        
+
         return optimizer, goal_metric
 
     def set_progress_reporter(
@@ -173,7 +180,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
         ----------
         ctx : ExecutionContext
             The shared execution context. ``x``/``y`` shape depends on the
-            splitter that ran upstream: a single DatasetDict for holdout, 
+            splitter that ran upstream: a single DatasetDict for holdout,
             a list of per-fold DatasetDict for cross-validation.
         """
         raise NotImplementedError("Subclasses must implement this method")
@@ -191,7 +198,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
 
     def _do_hpo(self, ctx: ExecutionContext) -> None:
         """Execute hyperparameter optimization using the configured optimizer.
-        
+
         The optimizer uses the self.evaluate method as the objective function,
         allowing each strategy to define its own evaluation logic.
         """
@@ -245,7 +252,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
         from DashAI.back.core.artifacts import normalize_artifacts
 
         config = di["config"]
-        optimizer = self._optimizer
+        optimizer, goal_metric = self._resolve_search()
         run_id = ctx.require("run_id")
         plot_paths: List[str] = []
 
@@ -255,7 +262,7 @@ class BaseEvaluationStrategy(BaseUnit, metaclass=ABCMeta):
             trials,
             run_id,
             n_params=len(ctx.require("optimizable_parameters")),
-            goal_metric=ctx.require("goal_metric"),
+            goal_metric=goal_metric,
         )
 
         normalized_plots = normalize_artifacts(plots)

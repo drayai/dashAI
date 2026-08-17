@@ -25,7 +25,7 @@ function ResultsTabMetricsToggle({
       >
         <ToggleButton value="test_metrics">{t("common:test")}</ToggleButton>
         <ToggleButton value="train_metrics">{t("common:train")}</ToggleButton>
-        {evaluationStrategy !== "CrossValidationEvaluationStrategy" && (
+        {evaluationStrategy !== "CrossValidationUnit" && (
           <ToggleButton value="validation_metrics">
             {t("common:validation")}
           </ToggleButton>

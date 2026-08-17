@@ -30,7 +30,11 @@ from DashAI.back.job.model_job import ModelJob
 from DashAI.back.metrics.base_metric import BaseMetric
 from DashAI.back.models.base_model import BaseModel
 from DashAI.back.optimizers.optuna_optimizer import OptunaOptimizer
+from DashAI.back.splitters.holdout import HoldoutSplitter
+from DashAI.back.splitters.k_fold import KFoldSplitter
 from DashAI.back.tasks.base_task import BaseTask
+from DashAI.back.units.cross_validation_unit import CrossValidationUnit
+from DashAI.back.units.holdout_unit import HoldoutUnit
 
 
 class OrchestrationTask(BaseTask):
@@ -147,6 +151,10 @@ def setup_orchestration_registry(client):
             CSVDataLoader,
             ModelJob,
             OptunaOptimizer,
+            HoldoutUnit,
+            HoldoutSplitter,
+            CrossValidationUnit,
+            KFoldSplitter,
         ]
     )
     yield services["component_registry"]
@@ -172,6 +180,7 @@ def create_model_session(
             train_metrics=["OrchestrationMetric"],
             validation_metrics=["OrchestrationMetric"],
             test_metrics=["OrchestrationMetric"],
+            evaluation_strategy="HoldoutUnit",
             splits=json.dumps(
                 {
                     "train": 0.5,
@@ -183,6 +192,7 @@ def create_model_session(
                     "shuffle": True,
                     "stratify": False,
                     "splitType": "random",
+                    "splitter_name": "HoldoutSplitter",
                 }
             ),
         )
@@ -266,6 +276,119 @@ def test_successful_run_writes_a_last_metric_for_every_split(
     assert set(by_split) == {SplitEnum.TRAIN, SplitEnum.VALIDATION, SplitEnum.TEST}
     for metric in metrics:
         assert metric.level == LevelEnum.LAST
+        assert metric.name == "OrchestrationMetric"
+        assert metric.value == 0.5
+
+
+@pytest.fixture(scope="module", name="cv_model_session_id")
+def create_cv_model_session(
+    client: TestClient, dataset_1: Dataset, orchestration_registry
+):
+    """Same session as ``model_session_id``, but wired for cross-validation.
+
+    ``KFoldSplitter`` reads ``splitter_name``, ``n_splits``, ``shuffle`` and
+    ``random_state`` from ``splits`` — a different shape than the
+    train/test/validation proportions holdout expects.
+    """
+    session_factory = client.app.container["session_factory"]
+
+    with session_factory() as db:
+        model_session = ModelSession(
+            dataset_id=dataset_1.id,
+            name="OrchestrationCVSession",
+            task_name="OrchestrationTask",
+            input_columns=["SepalLengthCm", "SepalWidthCm"],
+            output_columns=["Species"],
+            train_metrics=["OrchestrationMetric"],
+            validation_metrics=["OrchestrationMetric"],
+            test_metrics=["OrchestrationMetric"],
+            evaluation_strategy="CrossValidationUnit",
+            splits=json.dumps(
+                {
+                    "splitter_name": "KFoldSplitter",
+                    "n_splits": 3,
+                    "shuffle": True,
+                    "random_state": 42,
+                }
+            ),
+        )
+        db.add(model_session)
+        db.commit()
+        db.refresh(model_session)
+        yield model_session.id
+
+
+@pytest.fixture(scope="module", name="cv_finished_run")
+def run_a_successful_cv_job(client: TestClient, cv_model_session_id: int) -> Run:
+    run_id = _create_run(client, cv_model_session_id, "OrchestrationModel")
+    ModelJob(run_id=run_id).run()
+
+    session_factory = client.app.container["session_factory"]
+    with session_factory() as db:
+        return db.get(Run, run_id)
+
+
+def test_cv_run_reaches_finished(cv_finished_run: Run):
+    assert cv_finished_run.status == RunStatus.FINISHED
+
+
+def test_cv_run_stamps_its_timestamps(cv_finished_run: Run):
+    assert cv_finished_run.start_time is not None
+    assert cv_finished_run.end_time is not None
+    assert cv_finished_run.end_time >= cv_finished_run.start_time
+
+
+def test_cv_run_persists_one_fold_entry_per_split_plus_the_full_dataset(
+    cv_finished_run: Run,
+):
+    """KFoldSplitter names its folds ``fold_0..fold_{n_splits-1}`` and appends
+    a ``full_dataset`` entry reserved for the final training pass — a
+    different shape than holdout's flat train/val/test index lists.
+    """
+    split_indexes = json.loads(cv_finished_run.split_indexes)
+
+    assert set(split_indexes) == {"fold_0", "fold_1", "fold_2", "full_dataset"}
+    for _, indexes in split_indexes.items():
+        assert set(indexes) == {"train_indexes", "test_indexes"}
+        assert len(indexes["train_indexes"]) > 0
+    assert split_indexes["full_dataset"]["test_indexes"] == []
+
+
+def test_cv_run_saves_the_model_artifact(cv_finished_run: Run):
+    assert cv_finished_run.run_path is not None
+    assert cv_finished_run.run_path.endswith(str(cv_finished_run.id))
+    assert os.path.exists(cv_finished_run.run_path)
+
+
+def test_cv_final_model_is_trained_on_the_complete_dataset(cv_finished_run: Run):
+    """The last element CrossValidationUnit trains on is the ``full_dataset``
+    fold, with no held-out validation partition.
+    """
+    saved = joblib.load(cv_finished_run.run_path)
+
+    assert saved["trained_with"]["train"] > 0
+    assert saved["trained_with"]["validation"] is None
+
+
+def test_cv_run_writes_a_last_metric_for_train_and_test(
+    client: TestClient, cv_finished_run: Run
+):
+    """LAST here comes from ``_aggregate_fold_metrics`` averaging the FOLD
+    metrics, not from evaluating the final model directly. CrossValidationUnit
+    never calls EvaluateModelUnit at the LAST level itself.
+    """
+    session_factory = client.app.container["session_factory"]
+    with session_factory() as db:
+        metrics = (
+            db.query(Metric)
+            .filter_by(run_id=cv_finished_run.id, level=LevelEnum.LAST)
+            .all()
+        )
+
+    by_split = {metric.split: metric for metric in metrics}
+
+    assert set(by_split) == {SplitEnum.TRAIN, SplitEnum.TEST}
+    for metric in metrics:
         assert metric.name == "OrchestrationMetric"
         assert metric.value == 0.5
 

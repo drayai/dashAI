@@ -83,10 +83,6 @@ from DashAI.back.dataset_sources.huggingface_dataset_source import (
 from DashAI.back.dataset_sources.openml_dataset_source import OpenMLDatasetSource
 from DashAI.back.dataset_sources.zenodo_dataset_source import ZenodoDatasetSource
 
-# Evaluation Strategies
-from DashAI.back.evaluation.cv import CrossValidationEvaluationStrategy
-from DashAI.back.evaluation.holdout import HoldoutEvaluationStrategy
-
 # Explainers
 from DashAI.back.explainability.explainers.contrastive_shap import ContrastiveShap
 from DashAI.back.explainability.explainers.dice_counterfactual import (
@@ -387,9 +383,12 @@ from DashAI.back.tasks.translation_task import TranslationTask
 # Units
 from DashAI.back.units.apply_converter_unit import ApplyConverterUnit
 from DashAI.back.units.build_model_unit import BuildModelUnit
+
+# Evaluation Strategies
+from DashAI.back.units.cross_validation_unit import CrossValidationUnit
 from DashAI.back.units.evaluate_model_unit import EvaluateModelUnit
 from DashAI.back.units.fit_converter_unit import FitConverterUnit
-from DashAI.back.units.fit_model_unit import FitModelUnit
+from DashAI.back.units.holdout_unit import HoldoutUnit
 from DashAI.back.units.load_dataset_unit import LoadDatasetUnit
 from DashAI.back.units.prepare_and_split_unit import PrepareAndSplitUnit
 from DashAI.back.units.save_dataset_unit import SaveDatasetUnit
@@ -565,7 +564,8 @@ def get_initial_components():
         LoadDatasetUnit,
         PrepareAndSplitUnit,
         BuildModelUnit,
-        FitModelUnit,
+        CrossValidationUnit,
+        HoldoutUnit,
         EvaluateModelUnit,
         SaveModelUnit,
         ApplyConverterUnit,
@@ -656,9 +656,6 @@ def get_initial_components():
         GroupKFoldSplitter,
         LeaveOneOutSplitter,
         RepeatedKFoldSplitter,
-        # Evaluation Strategies
-        CrossValidationEvaluationStrategy,
-        HoldoutEvaluationStrategy,
         # Statistical tests
         AnovaTest,
         FriedmanTest,

@@ -450,8 +450,7 @@ function AddModelDialog({
               />
             </Box>
 
-            {session?.evaluation_strategy ===
-              "CrossValidationEvaluationStrategy" && (
+            {session?.evaluation_strategy === "CrossValidationUnit" && (
               <NestedCVSelector
                 useNestedCV={useNestedCV}
                 onChange={setUseNestedCV}

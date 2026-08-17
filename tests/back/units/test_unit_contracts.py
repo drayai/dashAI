@@ -42,6 +42,20 @@ def _unit_class(tree):
     return None
 
 
+def _is_abstract_class(cls):
+    for node in cls.body:
+        if isinstance(node, ast.FunctionDef):
+            for decorator in node.decorator_list:
+                if (
+                    isinstance(decorator, ast.Name) and decorator.id == "abstractmethod"
+                ) or (
+                    isinstance(decorator, ast.Attribute)
+                    and decorator.attr == "abstractmethod"
+                ):
+                    return True
+    return False
+
+
 def _declared(cls, name):
     for node in cls.body:
         if isinstance(node, ast.Assign) and any(
@@ -74,7 +88,7 @@ def _parsed_units():
     for path in _unit_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         cls = _unit_class(tree)
-        if cls is not None:
+        if cls is not None and not _is_abstract_class(cls):
             units.append((path.name, cls))
     return units
 

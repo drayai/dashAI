@@ -319,7 +319,7 @@ export function LiveMetricsChart({ run }) {
   const isCV = useMemo(() => {
     if (!run.model_session_id) return false;
     const session = getModelSessionById(run.model_session_id.toString());
-    return session.evaluation_strategy === "CrossValidationEvaluationStrategy";
+    return session.evaluation_strategy === "CrossValidationUnit";
   }, [run.model_session_id]);
 
   return (

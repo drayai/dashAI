@@ -4,45 +4,14 @@ import numpy as np
 from kink import di
 
 from DashAI.back.core.enums.metrics import LevelEnum, SplitEnum
-from DashAI.back.core.schema_fields import schema_field
-from DashAI.back.core.utils import MultilingualString
 from DashAI.back.dependencies.database.models import Metric
-from DashAI.back.evaluation.base_evaluation_strategy import (
-    BaseEvaluationStrategy,
-    EvaluationStrategySchema,
-)
 from DashAI.back.splitters.base_splitter import BaseSplitter
 from DashAI.back.units.context import ExecutionContext
 from DashAI.back.units.evaluate_model_unit import EvaluateModelUnit
+from DashAI.back.units.evaluation_strategy import EvaluationStrategy
 
 
-class CrossValidationSchema(EvaluationStrategySchema):
-    nested: schema_field(
-        dict,
-        placeholder=None,
-        description=MultilingualString(
-            en="Inner splitter configuration for nested cross-validation. "
-            "Omit to run plain (non-nested) CV.",
-            es="Configuración del splitter interno para validación cruzada "
-            "anidada. Omitir para CV simple (no anidada).",
-            pt="Configuração do splitter interno para validação cruzada "
-            "aninhada. Omitir para CV simples (não aninhada).",
-            de="Konfiguration des inneren Splitters für verschachtelte "
-            "Kreuzvalidierung. Weglassen für einfache (nicht verschachtelte) "
-            "CV.",
-            zh="嵌套交叉验证的内层分割器配置。留空则执行普通（非嵌套）交叉验证。",
-        ),
-        alias=MultilingualString(
-            en="Nested CV",
-            es="CV anidada",
-            pt="CV aninhada",
-            de="Verschachtelte CV",
-            zh="嵌套交叉验证",
-        ),
-    )  # type: ignore
-
-
-class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
+class CrossValidationUnit(EvaluationStrategy):
     """Evaluation strategy implementing k-fold cross-validation with optional
     nested CV and HPO.
 
@@ -51,8 +20,6 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
     - TRIAL level: Metrics during HPO trials
     - LAST/LAST_OUTER: Aggregated metrics (mean and std) for simple/nested CV
     """
-
-    SCHEMA = CrossValidationSchema
 
     def __init__(self, **config) -> None:
         super().__init__(**config)
@@ -69,24 +36,25 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
         ----------
         ctx : ExecutionContext
             The shared execution context.
-            ``x``/``y`` are lists of per-fold DatasetDict's, as produced by the CV 
-            splitter. The last element of each list is the complete dataset, reserved 
+            ``x``/``y`` are lists of per-fold DatasetDict's, as produced by the CV
+            splitter. The last element of each list is the complete dataset, reserved
             for the final training pass.
         """
         x = ctx.require("x")
         y = ctx.require("y")
+        run_id = ctx.require("run_id")
 
         plot_paths = []
 
         # STEP 1: Hyperparameter Optimization (if enabled)
         if self._optimizer and self._goal_metric:
-            nested = self.config.get("nested")
+            nested = self._get_run_nested_config(ctx)
             # Initialize nested CV if required
             if nested:
                 try:
                     registry = di["component_registry"]
                     splitter_name = nested.get("splitter_name", None)
-                    
+
                     # Create inner splitter for nested CV fold generation
                     self.inner_splitter = registry[splitter_name]["class"](nested)
                 except Exception as e:
@@ -120,7 +88,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
             # Set model's internal references to current fold data
             model.x_data = x_fold
             model.y_data = y_fold
-            
+
             # Train model on fold's training partition
             model.train(x_fold["train"], y_fold["train"])
             ctx.put("model", model)
@@ -135,7 +103,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
         # STEP 3: Aggregate metrics across all folds
         # Compute mean and std of fold metrics and store as LAST level metrics
         self._aggregate_fold_metrics(
-            run_id=ctx.get("run_id"),
+            run_id=run_id,
             level_to_agg=LevelEnum.FOLD,
             level_to_save=LevelEnum.LAST,
         )
@@ -156,7 +124,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
         optimization. It trains and evaluates the model on k-1 folds and computes
         the average performance. When used in nested CV, it evaluates on inner folds
         within a specific outer fold.
-        
+
         Parameters
         ----------
         model : BaseModel
@@ -169,7 +137,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
             {"train": y_train, "test": y_test}.
         metric : Metric
             The metric class to compute on predictions.
-            
+
         Returns
         -------
         float
@@ -182,7 +150,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
 
         # List to collect the goal metric value from each fold
         folds_results = []
-        
+
         # Dictionaries to accumulate all metrics across folds for averaging
         train_results = {}
         test_results = {}
@@ -247,7 +215,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
 
     def _nested_cv(self, ctx: ExecutionContext) -> None:
         """Execute nested cross-validation: an inner HPO loop per outer fold.
-        
+
         Parameters
         ----------
         ctx : ExecutionContext
@@ -333,7 +301,7 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
                 .filter(Metric.run_id == run_id, Metric.level == level_to_agg)
                 .all()
             )
-            
+
             # If no metrics found, nothing to aggregate
             if not fold_metrics:
                 return
@@ -378,3 +346,14 @@ class CrossValidationEvaluationStrategy(BaseEvaluationStrategy):
 
             # Persist aggregated metrics to database
             db.commit()
+
+    def _get_run_nested_config(self, ctx: ExecutionContext):
+        """Return the nested configuration stored on the Run row, if any."""
+        from DashAI.back.dependencies.database.models import Run
+
+        run_id = ctx.require("run_id")
+        from kink import di
+
+        with di["session_factory"]() as db:
+            run = db.get(Run, run_id)
+            return getattr(run, "nested", None)

@@ -77,8 +77,7 @@ export default function RunEditForm({
           />
         </Box>
 
-        {session?.evaluation_strategy ===
-          "CrossValidationEvaluationStrategy" && (
+        {session?.evaluation_strategy === "CrossValidationUnit" && (
           <NestedCVSelector
             useNestedCV={editedUseNestedCV}
             onChange={setEditedUseNestedCV}

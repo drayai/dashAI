@@ -1,9 +1,9 @@
-from DashAI.back.evaluation.base_evaluation_strategy import BaseEvaluationStrategy
 from DashAI.back.units.context import ExecutionContext
 from DashAI.back.units.evaluate_model_unit import EvaluateModelUnit
+from DashAI.back.units.evaluation_strategy import EvaluationStrategy
 
 
-class HoldoutEvaluationStrategy(BaseEvaluationStrategy):
+class HoldoutUnit(EvaluationStrategy):
     """Evaluation strategy implementing holdout (train/validation/test split)
     validation.
 
@@ -15,7 +15,7 @@ class HoldoutEvaluationStrategy(BaseEvaluationStrategy):
     def execute(self, ctx: ExecutionContext) -> None:
         """Train on the training set, optionally optimize with the validation
         set.
-        
+
         Trains a model on the training partition and optionally performs hyperparameter
         optimization using the validation set. Finally evaluates the trained model on
         all three partitions (train, validation, test) and returns the model with plots.
@@ -23,7 +23,7 @@ class HoldoutEvaluationStrategy(BaseEvaluationStrategy):
         Parameters
         ----------
         ctx : ExecutionContext
-            The shared execution context. 
+            The shared execution context.
             ``x``/``y`` are the DatasetDict's produced by the holdout splitter.
         """
         x = ctx.require("x")
@@ -53,7 +53,7 @@ class HoldoutEvaluationStrategy(BaseEvaluationStrategy):
 
         Used as the objective function during hyperparameter optimization:
         trains on the training set and scores on the validation set.
-        
+
         Parameters
         ----------
         model : BaseModel

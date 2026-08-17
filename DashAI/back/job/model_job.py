@@ -6,10 +6,10 @@ from sqlalchemy import exc
 from sqlalchemy.orm.attributes import flag_modified
 
 from DashAI.back.dependencies.database.models import ModelSession, Run
-from DashAI.back.evaluation.base_evaluation_strategy import BaseEvaluationStrategy
 from DashAI.back.job.base_job import BaseJob, JobError
 from DashAI.back.units.build_model_unit import BuildModelUnit
 from DashAI.back.units.context import ExecutionContext
+from DashAI.back.units.evaluation_strategy import EvaluationStrategy
 from DashAI.back.units.load_dataset_unit import LoadDatasetUnit
 from DashAI.back.units.prepare_and_split_unit import PrepareAndSplitUnit
 from DashAI.back.units.save_model_unit import SaveModelUnit
@@ -146,7 +146,7 @@ class ModelJob(BaseJob):
                         f"{model_session.evaluation_strategy} in registry.",
                     ) from e
 
-                evaluation_strategy: "BaseEvaluationStrategy" = strategy_class(
+                evaluation_strategy: "EvaluationStrategy" = strategy_class(
                     optimizer=(
                         {
                             "component": run.optimizer_name,
@@ -156,7 +156,6 @@ class ModelJob(BaseJob):
                         else None
                     ),
                     goal_metric=run.goal_metric,
-                    nested=getattr(run, "nested", None),
                 )
                 evaluation_strategy.set_progress_reporter(self.report_progress)
 

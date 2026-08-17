@@ -64,8 +64,7 @@ export default function ResultsTabsHeader({
   // Get session from context to check if the evaluation strategy is Cross Validation
   const { selectedSession } = useModels();
   const isCrossValidation =
-    selectedSession?.evaluation_strategy ===
-    "CrossValidationEvaluationStrategy";
+    selectedSession?.evaluation_strategy === "CrossValidationUnit";
   const isNestedCrossValidation = !!run?.nested;
 
   return (

@@ -7,7 +7,8 @@ EXPECTED_UNITS = {
     "LoadDatasetUnit",
     "PrepareAndSplitUnit",
     "BuildModelUnit",
-    "FitModelUnit",
+    "HoldoutUnit",
+    "CrossValidationUnit",
     "EvaluateModelUnit",
     "SaveModelUnit",
     "ApplyConverterUnit",
@@ -51,7 +52,8 @@ def test_unit_schemas_describe_their_configuration(units):
         "splits",
     }
     assert "model" in units["BuildModelUnit"]["schema"]["properties"]
-    assert "optimizer" in units["FitModelUnit"]["schema"]["properties"]
+    assert "optimizer" in units["HoldoutUnit"]["schema"]["properties"]
+    assert "optimizer" in units["CrossValidationUnit"]["schema"]["properties"]
     assert set(units["ApplyConverterUnit"]["schema"]["properties"]) == {
         "converter",
         "scope",
@@ -79,11 +81,15 @@ def test_component_fields_tell_the_front_which_components_to_offer(units):
     fetch that component's own schema to render the nested form.
     """
     model = units["BuildModelUnit"]["schema"]["properties"]["model"]
-    optimizer = units["FitModelUnit"]["schema"]["properties"]["optimizer"]
+    holdout_optimizer = units["HoldoutUnit"]["schema"]["properties"]["optimizer"]
+    cross_validation_optimizer = units["CrossValidationUnit"]["schema"]["properties"][
+        "optimizer"
+    ]
     converter = units["ApplyConverterUnit"]["schema"]["properties"]["converter"]
 
     assert model["parent"] == "BaseModel"
-    assert optimizer["parent"] == "BaseOptimizer"
+    assert holdout_optimizer["parent"] == "BaseOptimizer"
+    assert cross_validation_optimizer["parent"] == "BaseOptimizer"
     assert converter["parent"] == "BaseConverter"
     assert set(model["properties"]) == {"component", "params"}
     assert set(converter["properties"]) == {"component", "params"}

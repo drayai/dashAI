@@ -38,9 +38,7 @@ function CreateSessionSteps({
   );
 
   // Holdout or cross-validation
-  const [evaluationStrategy, setEvaluationStrategy] = useState(
-    "HoldoutEvaluationStrategy",
-  );
+  const [evaluationStrategy, setEvaluationStrategy] = useState("HoldoutUnit");
 
   const [newExp, setNewExp] = useState({
     name: "",
@@ -166,13 +164,13 @@ function CreateSessionSteps({
 
       const hasTrain =
         (newExp.splits.train !== undefined && newExp.splits.train !== 0) ||
-        evaluationStrategy === "CrossValidationEvaluationStrategy";
+        evaluationStrategy === "CrossValidationUnit";
       const hasValidation =
         newExp.splits.validation !== undefined &&
         newExp.splits.validation !== 0;
       const hasTest =
         (newExp.splits.test !== undefined && newExp.splits.test !== 0) ||
-        evaluationStrategy === "CrossValidationEvaluationStrategy";
+        evaluationStrategy === "CrossValidationUnit";
 
       let effectiveName = sessionName;
       let response;

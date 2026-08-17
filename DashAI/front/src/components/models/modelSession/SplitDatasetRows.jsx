@@ -320,7 +320,7 @@ function SplitDatasetRows({
   }, [hasPredefinedSplits]);
 
   useEffect(() => {
-    if (evaluationStrategy === "HoldoutEvaluationStrategy") {
+    if (evaluationStrategy === "HoldoutUnit") {
       if (splitType === SPLIT_TYPES.PREDEFINED) {
         setSplitsReady(true);
       } else if (
@@ -338,7 +338,7 @@ function SplitDatasetRows({
       } else {
         setSplitsReady(false);
       }
-    } else if (evaluationStrategy === "CrossValidationEvaluationStrategy") {
+    } else if (evaluationStrategy === "CrossValidationUnit") {
       if (!cvFoldError && !cvRepeatError && !groupColumnError) {
         setSplitsReady(true);
       } else {
@@ -412,13 +412,13 @@ function SplitDatasetRows({
             size="small"
           >
             <ToggleButton
-              value="HoldoutEvaluationStrategy"
+              value="HoldoutUnit"
               sx={{ textTransform: "none", fontSize: "0.8rem" }}
             >
               {t("experiments:label.holdout")}
             </ToggleButton>
             <ToggleButton
-              value="CrossValidationEvaluationStrategy"
+              value="CrossValidationUnit"
               sx={{ textTransform: "none", fontSize: "0.8rem" }}
             >
               {t("experiments:label.crossValidation")}
@@ -428,7 +428,7 @@ function SplitDatasetRows({
       </Paper>
 
       {/* HOLDOUT SECTION */}
-      {evaluationStrategy === "HoldoutEvaluationStrategy" && (
+      {evaluationStrategy === "HoldoutUnit" && (
         <>
           {/* Split type selector */}
           <Paper
@@ -617,7 +617,7 @@ function SplitDatasetRows({
       )}
 
       {/* CROSS-VALIDATION SECTION */}
-      {evaluationStrategy === "CrossValidationEvaluationStrategy" && (
+      {evaluationStrategy === "CrossValidationUnit" && (
         <>
           {/* CV Type Selector */}
           <SplitsCard label={t("experiments:label.cvType")}>

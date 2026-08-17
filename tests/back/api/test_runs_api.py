@@ -147,7 +147,7 @@ def test_create_run_with_cross_validation_strategy(client: TestClient, dataset_i
             "train_metrics": [],
             "validation_metrics": [],
             "test_metrics": [],
-            "evaluation_strategy": "CrossValidationEvaluationStrategy",
+            "evaluation_strategy": "CrossValidationUnit",
             "splits": json.dumps(
                 {
                     "train": 0.5,
@@ -171,9 +171,7 @@ def test_create_run_with_cross_validation_strategy(client: TestClient, dataset_i
     response = client.get(f"/api/v1/model-session/{session['id']}")
     assert response.status_code == 200, response.text
     persisted_session = response.json()
-    assert (
-        persisted_session["evaluation_strategy"] == "CrossValidationEvaluationStrategy"
-    )
+    assert persisted_session["evaluation_strategy"] == "CrossValidationUnit"
     persisted_splits = json.loads(persisted_session["splits"])
     assert persisted_splits["splitter_name"] == "KFoldSplitter"
     assert persisted_splits["n_splits"] == 3

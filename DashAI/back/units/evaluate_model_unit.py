@@ -91,7 +91,7 @@ class EvaluateModelUnit(BaseUnit):
                 if already_logged:
                     continue
 
-                model.calculate_metrics(split=split, level=level)
+                model.calculate_metrics(split=split, level=level, fold_index=fold_index)
         except Exception as e:
             log.exception(e)
             raise JobError(
