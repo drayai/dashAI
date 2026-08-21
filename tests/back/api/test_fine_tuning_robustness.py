@@ -76,6 +76,63 @@ def _create_run(client: TestClient, dataset_id: int, name: str) -> int:
     return created.json()["id"]
 
 
+def test_unsloth_run_uses_the_unsloth_backend(client: TestClient, monkeypatch):
+    dataset = _create_dataset(client)
+    created = client.post(
+        "/api/v1/fine-tuning/runs",
+        json={
+            "name": "unsloth run",
+            "dataset_id": dataset.id,
+            "base_model_id": "qwen2.5-0.5b-instruct",
+            "base_model_revision": "main",
+            "method": "lora",
+            "backend": "unsloth",
+            "dataset_mapping": {
+                "format": "prompt_completion",
+                "prompt_column": "instruction",
+                "completion_column": "response",
+                "validation_split": 0.25,
+            },
+            "training_parameters": {"preset": "quick_test", "max_steps": 1},
+        },
+    )
+    assert created.status_code == 201
+    run_id = created.json()["id"]
+    assert created.json()["backend"] == "unsloth"
+
+    class FakeUnslothBackend:
+        def train(self, request, progress, is_canceled):
+            adapter = request.output_path / "adapter"
+            adapter.mkdir(parents=True)
+            (request.output_path / "manifest.json").write_text("{}", encoding="utf-8")
+            from DashAI.back.fine_tuning.base import FineTuningResult
+
+            return FineTuningResult(
+                artifact_path=request.output_path,
+                metrics={"backend": "unsloth"},
+                runtime_metadata={"backend": "unsloth"},
+            )
+
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.unsloth_backend.UnslothFineTuningBackend",
+        FakeUnslothBackend,
+    )
+    monkeypatch.setattr(
+        "DashAI.back.job.fine_tuning_job.ensure_model",
+        lambda _root, model_id, revision, progress=None: (
+            Path(client.app.container["config"]["LLM_MODELS_PATH"])
+            / model_id
+            / revision,
+            "sha",
+        ),
+    )
+    response = client.post(f"/api/v1/fine-tuning/runs/{run_id}/start")
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["metrics"]["backend"] == "unsloth"
+    assert response.json()["runtime_metadata"]["backend"] == "unsloth"
+
+
 def _lock(client: TestClient) -> GpuLock:
     return GpuLock(gpu_lock_path(client.app.container["config"]))
 

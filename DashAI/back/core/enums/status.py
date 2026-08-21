@@ -26,6 +26,17 @@ class FineTuningStatus(str, Enum):
     CANCELED = "canceled"
 
 
+class FineTuningBackendType(str, Enum):
+    """Execution backend for a fine-tuning run.
+
+    Unsloth is a separate execution backend for LoRA/QLoRA, not an
+    alternative method: it is modeled independently from the method column.
+    """
+
+    TRANSFORMERS = "transformers"
+    UNSLOTH = "unsloth"
+
+
 class ExplorerStatus(Enum):
     NOT_STARTED = 0
     DELIVERED = 1

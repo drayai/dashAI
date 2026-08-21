@@ -124,3 +124,57 @@ def test_pascal_qlora_preflight_is_ready_and_warns_about_download(
     assert report.train_rows == 3
     assert report.validation_rows == 1
     assert "model_will_download" in {issue.code for issue in report.warnings}
+
+
+def test_unsloth_preflight_blocks_when_not_installed(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.preflight.dependency_versions",
+        lambda: _versions(),
+    )
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.preflight.hardware_info",
+        lambda: {
+            "cuda_available": True,
+            "device": "test",
+            "vram_gb": 8,
+            "compute_capability": [6, 1],
+        },
+    )
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.preflight.unsloth_installed",
+        lambda: (False, None),
+    )
+
+    request = _request()
+    request.backend = "unsloth"
+    report = run_preflight(request, _dataset(tmp_path), tmp_path / "models")
+
+    assert report.ready is False
+    assert "unsloth_not_installed" in {issue.code for issue in report.blockers}
+
+
+def test_unsloth_preflight_warns_on_pascal_gpu(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.preflight.dependency_versions",
+        lambda: _versions(),
+    )
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.preflight.hardware_info",
+        lambda: {
+            "cuda_available": True,
+            "device": "GTX 1080",
+            "vram_gb": 8,
+            "compute_capability": [6, 1],
+        },
+    )
+    monkeypatch.setattr(
+        "DashAI.back.fine_tuning.preflight.unsloth_installed",
+        lambda: (True, "2026.8.19"),
+    )
+
+    request = _request(method=FineTuningMethod.LORA)
+    request.backend = "unsloth"
+    report = run_preflight(request, _dataset(tmp_path), tmp_path / "models")
+
+    assert report.ready is True
+    assert "unsloth_experimental_gpu" in {issue.code for issue in report.warnings}

@@ -73,6 +73,7 @@ const emptyDraft = {
   base_model_id: "qwen2.5-0.5b-instruct",
   base_model_revision: "main",
   method: "qlora",
+  backend: "transformers",
   dataset_mapping: {
     format: "prompt_completion",
     prompt_column: "",
@@ -410,6 +411,27 @@ export default function FineTuning() {
                 <MenuItem value="lora">LoRA (FP16)</MenuItem>
               </Select>
             </FormControl>
+            {catalog?.capabilities?.unsloth && (
+              <FormControl fullWidth>
+                <InputLabel>
+                  {t("generative:fineTuning.label.backend")}
+                </InputLabel>
+                <Select
+                  label={t("generative:fineTuning.label.backend")}
+                  value={draft.backend}
+                  onChange={(event) =>
+                    setDraft({ ...draft, backend: event.target.value })
+                  }
+                >
+                  <MenuItem value="transformers">
+                    {t("generative:fineTuning.label.backendTransformers")}
+                  </MenuItem>
+                  <MenuItem value="unsloth">
+                    {t("generative:fineTuning.label.backendUnsloth")}
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            )}
           </Stack>
         )}
         {step === 1 && (

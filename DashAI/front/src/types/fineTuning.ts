@@ -1,6 +1,8 @@
 export type FineTuningStatus =
   "not_started" | "queued" | "running" | "completed" | "failed" | "canceled";
 
+export type FineTuningBackend = "transformers" | "unsloth";
+
 export interface DatasetMapping {
   format: "text" | "prompt_completion" | "messages";
   text_column?: string | null;
@@ -37,6 +39,7 @@ export interface FineTuningRun {
   base_model_revision: string;
   resolved_model_revision?: string | null;
   method: "lora" | "qlora";
+  backend: FineTuningBackend;
   dataset_mapping: DatasetMapping;
   training_parameters: TrainingParameters;
   status: FineTuningStatus;

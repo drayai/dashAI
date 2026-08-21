@@ -82,6 +82,7 @@ async def create_run(
             base_model_id=params.base_model_id,
             base_model_revision=params.base_model_revision,
             method=params.method.value,
+            backend=params.backend,
             dataset_mapping=params.dataset_mapping.model_dump(mode="json"),
             training_parameters=params.training_parameters.model_dump(mode="json"),
         )

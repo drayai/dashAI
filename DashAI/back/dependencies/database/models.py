@@ -28,6 +28,7 @@ from DashAI.back.core.enums.status import (
     DatasetStatus,
     ExplainerStatus,
     ExplorerStatus,
+    FineTuningBackendType,
     FineTuningStatus,
     PluginStatus,
     PredictionStatus,
@@ -587,6 +588,15 @@ class FineTuningRun(Base):
         String, nullable=True
     )
     method: Mapped[str] = mapped_column(String, nullable=False)
+    backend: Mapped[FineTuningBackendType] = mapped_column(
+        Enum(
+            FineTuningBackendType,
+            name="finetuningbackendtype",
+            values_callable=lambda backends: [backend.value for backend in backends],
+        ),
+        nullable=False,
+        default=FineTuningBackendType.TRANSFORMERS,
+    )
     dataset_mapping: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
     training_parameters: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[FineTuningStatus] = mapped_column(

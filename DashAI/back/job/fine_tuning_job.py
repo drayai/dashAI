@@ -9,7 +9,10 @@ from DashAI.back.api.api_v1.schemas.fine_tuning_params import (
     FineTuningMethod,
     TrainingParameters,
 )
-from DashAI.back.core.enums.status import FineTuningStatus
+from DashAI.back.core.enums.status import (
+    FineTuningBackendType,
+    FineTuningStatus,
+)
 from DashAI.back.dependencies.database.models import Dataset, FineTuningRun
 from DashAI.back.fine_tuning.base import FineTuningRequest, TrainingCanceledError
 from DashAI.back.fine_tuning.dataset import prepare_dataset
@@ -118,6 +121,7 @@ class FineTuningJob(BaseJob):
                 dataset_path = dataset.file_path
                 model_id = run.base_model_id
                 model_revision = run.base_model_revision
+                run_backend = run.backend
                 mapping = DatasetMapping.model_validate(run.dataset_mapping)
                 parameters = TrainingParameters.model_validate(run.training_parameters)
                 method = FineTuningMethod(run.method)
@@ -151,10 +155,19 @@ class FineTuningJob(BaseJob):
                 output_path=artifact_path,
                 resolved_revision=resolved_revision,
             )
-            try:
-                backend = di["fine_tuning_backend"]
-            except KeyError:
-                backend = HuggingFaceFineTuningBackend()
+            if run_backend == FineTuningBackendType.UNSLOTH:
+                # Deferred import: Unsloth patches global torch state and is
+                # only touched when a run actually requests it.
+                from DashAI.back.fine_tuning.unsloth_backend import (
+                    UnslothFineTuningBackend,
+                )
+
+                backend = UnslothFineTuningBackend()
+            else:
+                try:
+                    backend = di["fine_tuning_backend"]
+                except KeyError:
+                    backend = HuggingFaceFineTuningBackend()
             result = backend.train(request, update, canceled)
 
             with session_factory() as db:

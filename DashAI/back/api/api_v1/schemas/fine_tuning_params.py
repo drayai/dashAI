@@ -4,7 +4,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from DashAI.back.core.enums.status import FineTuningStatus
+from DashAI.back.core.enums.status import FineTuningBackendType, FineTuningStatus
 
 
 class DatasetFormat(str, Enum):
@@ -67,6 +67,7 @@ class FineTuningRunCreate(BaseModel):
     base_model_id: str
     base_model_revision: str = "main"
     method: FineTuningMethod = FineTuningMethod.QLORA
+    backend: FineTuningBackendType = FineTuningBackendType.TRANSFORMERS
     dataset_mapping: DatasetMapping
     training_parameters: TrainingParameters = Field(default_factory=TrainingParameters)
 
@@ -96,6 +97,7 @@ class PreflightRequest(BaseModel):
     base_model_id: str
     base_model_revision: str = "main"
     method: FineTuningMethod = FineTuningMethod.QLORA
+    backend: FineTuningBackendType = FineTuningBackendType.TRANSFORMERS
     dataset_mapping: DatasetMapping
     training_parameters: TrainingParameters = Field(default_factory=TrainingParameters)
     download_model: bool = False

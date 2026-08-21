@@ -221,6 +221,32 @@ MVP inspirado en LM Studio, limitado al flujo base+adaptadores de Transformers:
 - Ejecución real (`scripts/local_model_inference_check.py`, resultado en `base_inference_result.json`): adopción del snapshot existente vía endpoint de descarga, sesión desde el modelo base con `top_k`/`seed`, y generación correcta («One primary color is red...») en 19,2 s sobre la GTX 1080. Con esto el MVP cumple los seis criterios de aceptación: descargar/reutilizar modelo curado, inventario, sesión desde base, parámetros de generación, respuesta generada, y el flujo equivalente con adaptador ya validado en el smoke del prototipo.
 - Pruebas automatizadas (51 backend + 8 frontend pasando): inventario con modelos no descargados, descarga con estado y 409 en duplicados, eliminación bloqueada por sesión, validación de referencias `local_model_id` (404/400), inyección de `_base_model_path` en `GenerativeJob` mediante registro simulado, descarga y sesión desde base en la interfaz, y compatibilidad de sesiones antiguas.
 
+## Backend Unsloth opcional (Hito 3)
+
+Unsloth se modeló como **backend de ejecución** independiente del método LoRA/QLoRA:
+
+- `FineTuningBackendType` (`transformers`/`unsloth`) y columna `FineTuningRun.backend` con valor heredado `transformers` (migración `d4a7c1e9f3b2`, verificada con upgrade sobre una fila existente — el default aplica —, downgrade y re-upgrade).
+- Selección de backend en schemas, API (`POST /runs` acepta y persiste `backend`), preflight y wizard (el selector Unsloth solo aparece cuando el catálogo lo reporta disponible).
+- `UnslothFineTuningBackend` implementa el contrato con imports completamente diferidos (la importación de Unsloth parchea el estado global de torch y ocurre solo en el worker que entrena), produce el mismo layout de artefacto (adaptador, manifiesto con `backend`, trainer_state, plantilla de chat) y reutiliza los chequeos de salud numérica del backend Transformers.
+- Capacidades dinámicas en el catálogo vía `find_spec` (sin importar Unsloth ni torch: verificado que `get_catalog()` corre sin cargar torch) con `unsloth`, `unsloth_version` y `unsloth_reason`.
+- Preflight: backend `unsloth` sin instalar produce el blocker `unsloth_not_installed`; instalado sobre una GPU con compute capability < 7.0 produce la advertencia `unsloth_experimental_gpu` (Pascal tratado como experimental, no bloqueado).
+
+### Veredicto de compatibilidad (investigación aislada)
+
+En un venv temporal (`E:/tmp-unsloth-venv`, Python 3.11.2) se resolvió `pip install unsloth --dry-run`: `unsloth 2026.8.19` requeriría `torch 2.11.0` (rueda pypi, que en Windows empaqueta CUDA 12.8 — la combinación que este equipo descartó por no admitir la GTX 1080), además de `transformers 5.5.0`, `trl 0.24.0`, `torchvision 0.26.0`, `xformers`, `triton-windows` y `torchao`, reemplazando el stack fijado de DashAI (`transformers 4.57.6`, `trl 1.10.0`, `peft 0.20.0`, `bitsandbytes 0.50.1`) y la instalación funcional de PyTorch `2.11.0+cu126`. Por ese motivo:
+
+- **no** se añadió el extra `finetuning-unsloth` a `pyproject.toml`: no existe una combinación reproducible que no sustituya las dependencias base;
+- no se instaló Unsloth en la `.venv` principal ni se ejecutó el smoke de 3 pasos;
+- el backend queda implementado, detectado y **deshabilitado honestamente** en este equipo (`capabilities.unsloth = false` con motivo accionable).
+
+Condiciones para habilitarlo después: una GPU con compute capability ≥ 7.0 y una ventana para re-pin del stack (o un entorno/worker aislado con su propio intérprete), junto con la validación del contrato de `FastLanguageModel` de la versión que se resuelva en ese momento.
+
+### Validación del Hito 3
+
+- 60 pruebas backend pasando, incluidas: catálogo con y sin Unsloth, default `transformers` en creación, selección del backend Unsloth en el worker mediante sustitución simulada (el run completa con `metrics.backend = "unsloth"`), preflight con blocker/advertencia según instalación y GPU, y mensaje claro al entrenar sin Unsloth.
+- Migración verificada con upgrade sobre dato heredado, downgrade y re-upgrade; `get_catalog()` confirmado sin cargar torch.
+- El backend Unsloth queda implementado pero no ejecutado en GPU real por las incompatibilidades documentadas arriba.
+
 ### Semántica del downgrade
 
 La migración fue verificada con upgrade, downgrade al head anterior y un nuevo upgrade. Como es habitual para una tabla creada completamente por una migración, el downgrade elimina los registros de fine-tuning; los archivos de adaptadores permanecen en disco y pasan a ser huérfanos. Antes de aceptar esta migración se debe decidir si el downgrade destructivo es suficiente, si se requiere una advertencia explícita o si DashAI necesita una herramienta de respaldo y reimportación de manifiestos.
@@ -250,4 +276,4 @@ No se implementaron Unsloth, GGUF, publicación a Hugging Face Hub, entrenamient
 
 ## Siguientes pasos técnicos recomendados
 
-Antes de convertir este prototipo en una entrega de producto, conviene priorizar: una prueba de estabilidad de 20–50 pasos; reconciliación de runs al arrancar; ejecución aislada para cancelación fuerte; pruebas de inferencia base versus adaptada; programación exclusiva de GPU; internacionalización completa; y una decisión explícita sobre plugins, artefactos y modelos soportados. Solo después tiene sentido ampliar el inventario hacia GGUF o una experiencia similar a LM Studio.
+Estado tras la productización: la reconciliación al arrancar, la programación exclusiva de GPU, la instrumentación de estabilidad (con la prueba real de 15 pasos), la internacionalización completa y el inventario local con descargas y sesión desde modelo base ya están implementados y validados. Lo pendiente, en orden de impacto: cancelación fuerte mediante aislamiento del entrenamiento en un subproceso gestionado; comparación de calidad de inferencia base versus adaptada con un protocolo de evaluación; una prueba de estabilidad más larga (40–50 pasos) y con warmup explícito para caracterizar el NaN temprano de `grad_norm`; y la decisión con el profesor sobre plugins, artefactos (fusión/GGUF) y modelos soportados antes de ampliar el catálogo. Unsloth queda habilitable cuando exista hardware con compute capability ≥ 7.0 o una ventana para re-pin del stack.

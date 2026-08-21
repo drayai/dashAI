@@ -97,6 +97,11 @@ def resolve_model(model_id: str) -> dict[str, Any]:
 
 
 def get_catalog() -> dict[str, Any]:
+    # Deferred import: unsloth_backend pulls the training stack, and the
+    # catalog module is imported at application startup.
+    from DashAI.back.fine_tuning.unsloth_backend import unsloth_capabilities
+
+    unsloth = unsloth_capabilities()
     return {
         "models": deepcopy(list(MODEL_CATALOG.values())),
         "presets": deepcopy(PRESET_CATALOG),
@@ -105,6 +110,8 @@ def get_catalog() -> dict[str, Any]:
             "dataset_formats": ["text", "prompt_completion", "messages"],
             "distributed_training": False,
             "gguf_export": False,
-            "unsloth": False,
+            "unsloth": unsloth["available"],
+            "unsloth_version": unsloth["version"],
+            "unsloth_reason": unsloth["reason"],
         },
     }

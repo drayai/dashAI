@@ -8,6 +8,7 @@ from DashAI.back.api.api_v1.schemas.fine_tuning_params import (
     PreflightReport,
     PreflightRequest,
 )
+from DashAI.back.core.enums.status import FineTuningBackendType
 from DashAI.back.dependencies.database.models import Dataset
 from DashAI.back.fine_tuning.catalog import resolve_model
 from DashAI.back.fine_tuning.dataset import prepare_dataset
@@ -15,6 +16,10 @@ from DashAI.back.fine_tuning.model_store import (
     ensure_model,
     model_directory,
     read_model_metadata,
+)
+from DashAI.back.fine_tuning.unsloth_backend import (
+    NOT_INSTALLED_MESSAGE,
+    unsloth_installed,
 )
 
 DEPENDENCIES = ("transformers", "datasets", "accelerate", "trl", "peft", "bitsandbytes")
@@ -83,6 +88,30 @@ def run_preflight(
             )
 
     hardware = hardware_info()
+    if request.backend == FineTuningBackendType.UNSLOTH:
+        installed, _unsloth_version = unsloth_installed()
+        if not installed:
+            blockers.append(
+                PreflightIssue(
+                    code="unsloth_not_installed",
+                    message=NOT_INSTALLED_MESSAGE,
+                )
+            )
+        else:
+            compute_capability = tuple(hardware.get("compute_capability", (0, 0)))
+            if hardware["cuda_available"] and compute_capability < (7, 0):
+                warnings.append(
+                    PreflightIssue(
+                        code="unsloth_experimental_gpu",
+                        message=(
+                            "Unsloth lists compute capability 7.0 as its "
+                            "general requirement; this GPU reports "
+                            f"{compute_capability}. Pascal GPUs are treated "
+                            "as experimental and were not validated in this "
+                            "environment."
+                        ),
+                    )
+                )
     if request.method == FineTuningMethod.QLORA:
         if not hardware["cuda_available"]:
             blockers.append(
