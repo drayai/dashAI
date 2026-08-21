@@ -63,7 +63,54 @@
     "noInputAvailable": "No hay entrada disponible para esta tarea",
     "selectModelCrumb": "Select Model",
     "sessionModel": "Modelo",
-    "downloadRequired": "descarga requerida"
+    "downloadRequired": "descarga requerida",
+    "fineTuningModule": "Fine-tuning local",
+    "fineTuningModuleDescription": "Entrena adaptadores LoRA/QLoRA con datasets de DashAI."
+  },
+  "fineTuning": {
+    "title": "Fine-tuning local de LLM",
+    "subtitle": "Entrena un adaptador LoRA/QLoRA y úsalo directamente en Generative.",
+    "button": {
+      "newRun": "Nueva ejecución",
+      "createAndStart": "Crear e iniciar",
+      "runPreflight": "Ejecutar diagnóstico",
+      "openInGenerative": "Abrir en Generative",
+      "showAdvanced": "Opciones avanzadas",
+      "hideAdvanced": "Ocultar opciones avanzadas"
+    },
+    "label": {
+      "runs": "Ejecuciones",
+      "inventory": "Inventario local",
+      "stepModel": "Modelo y hardware",
+      "stepDataset": "Mapeo del dataset",
+      "stepConfiguration": "Configuración",
+      "stepReview": "Revisión y ejecución",
+      "name": "Nombre",
+      "baseModel": "Modelo base",
+      "method": "Método",
+      "dataset": "Dataset",
+      "format": "Formato",
+      "textColumn": "Columna de texto",
+      "messagesColumn": "Columna de mensajes",
+      "promptColumn": "Columna de prompt",
+      "completionColumn": "Columna de completion",
+      "preset": "Preset",
+      "maxSamples": "Muestras máximas",
+      "maxSteps": "Pasos máximos",
+      "sequenceLength": "Longitud de secuencia",
+      "gradientAccumulation": "Acumulación de gradiente",
+      "learningRate": "Tasa de aprendizaje",
+      "loraRank": "Rango LoRA",
+      "preflightReady": "Diagnóstico listo",
+      "preflightBlocked": "Diagnóstico bloqueado",
+      "rowsSummary": "{{train}} de entrenamiento / {{validation}} de validación",
+      "stepsUnit": "pasos"
+    },
+    "message": {
+      "noRuns": "Aún no hay ejecuciones de fine-tuning.",
+      "deleteConfirm": "¿Eliminar {{name}}?",
+      "healthWarnings": "Advertencias de salud del entrenamiento"
+    }
   },
   "message": {
     "sessionCreatedSuccess": "Sesión creada exitosamente.",

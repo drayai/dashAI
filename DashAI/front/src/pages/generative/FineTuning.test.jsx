@@ -77,6 +77,7 @@ import {
 } from "../../api/fineTuning";
 import { createGenerativeSession } from "../../api/generativeTask";
 import { getDatasets } from "../../api/datasets";
+import i18n from "../../utils/i18n";
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -176,6 +177,28 @@ describe("FineTuning page", () => {
         }),
       ),
     );
+  });
+
+  it("renders through the standard i18n system in Spanish", async () => {
+    await i18n.changeLanguage("es");
+    try {
+      renderWithProviders(<FineTuning />, {
+        route: "/app/generative/fine-tuning",
+      });
+      expect(
+        await screen.findByText("Fine-tuning local de LLM"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Entrena un adaptador LoRA/QLoRA y úsalo directamente en Generative.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Nueva ejecución" }),
+      ).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("en");
+    }
   });
 
   it("confirms deletion of a managed base model", async () => {

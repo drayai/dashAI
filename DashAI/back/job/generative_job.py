@@ -169,6 +169,16 @@ class GenerativeJob(BaseJob):
                             ensure_managed_path,
                             model_directory,
                         )
+                        from DashAI.back.fine_tuning.resource_lock import (
+                            training_lock,
+                        )
+
+                        # Adapter inference loads the same GPU a fine-tuning
+                        # job may be training on: fail fast with an
+                        # actionable error instead of risking an OOM.
+                        gpu_lock = training_lock(config)
+                        if gpu_lock.is_locked():
+                            raise JobError(gpu_lock.busy_message())
 
                         fine_tuning_run = db.get(
                             FineTuningRun, generative_session.fine_tuning_run_id

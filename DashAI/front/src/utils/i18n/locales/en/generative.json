@@ -63,7 +63,54 @@
     "noInputAvailable": "No input available for this task",
     "selectModelCrumb": "Select Model",
     "sessionModel": "Model",
-    "downloadRequired": "download required"
+    "downloadRequired": "download required",
+    "fineTuningModule": "Local fine-tuning",
+    "fineTuningModuleDescription": "Train LoRA/QLoRA adapters with your DashAI datasets."
+  },
+  "fineTuning": {
+    "title": "Local LLM fine-tuning",
+    "subtitle": "Train a LoRA/QLoRA adapter and use it directly in Generative.",
+    "button": {
+      "newRun": "New run",
+      "createAndStart": "Create and start",
+      "runPreflight": "Run preflight",
+      "openInGenerative": "Open in Generative",
+      "showAdvanced": "Advanced options",
+      "hideAdvanced": "Hide advanced options"
+    },
+    "label": {
+      "runs": "Runs",
+      "inventory": "Local inventory",
+      "stepModel": "Model and hardware",
+      "stepDataset": "Dataset mapping",
+      "stepConfiguration": "Configuration",
+      "stepReview": "Review and run",
+      "name": "Name",
+      "baseModel": "Base model",
+      "method": "Method",
+      "dataset": "Dataset",
+      "format": "Format",
+      "textColumn": "Text column",
+      "messagesColumn": "Messages column",
+      "promptColumn": "Prompt column",
+      "completionColumn": "Completion column",
+      "preset": "Preset",
+      "maxSamples": "Max samples",
+      "maxSteps": "Max steps",
+      "sequenceLength": "Sequence length",
+      "gradientAccumulation": "Gradient accumulation",
+      "learningRate": "Learning rate",
+      "loraRank": "LoRA rank",
+      "preflightReady": "Preflight ready",
+      "preflightBlocked": "Preflight blocked",
+      "rowsSummary": "{{train}} train / {{validation}} validation",
+      "stepsUnit": "steps"
+    },
+    "message": {
+      "noRuns": "No fine-tuning runs yet.",
+      "deleteConfirm": "Delete {{name}}?",
+      "healthWarnings": "Training health warnings"
+    }
   },
   "message": {
     "sessionCreatedSuccess": "Session successfully created.",

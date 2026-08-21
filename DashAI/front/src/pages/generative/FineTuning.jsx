@@ -7,6 +7,7 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Collapse,
   Container,
   Divider,
   FormControl,
@@ -45,43 +46,6 @@ import {
   startFineTuningRun,
 } from "../../api/fineTuning";
 import { createGenerativeSession } from "../../api/generativeTask";
-
-const copy = {
-  en: {
-    title: "Local LLM fine-tuning",
-    subtitle: "Train a LoRA/QLoRA adapter and use it directly in Generative.",
-    runs: "Runs",
-    inventory: "Local inventory",
-    newRun: "New run",
-    model: "Model and hardware",
-    dataset: "Dataset mapping",
-    configuration: "Configuration",
-    review: "Review and run",
-    preflight: "Run preflight",
-    create: "Create and start",
-    open: "Open in Generative",
-    cancel: "Cancel",
-    delete: "Delete",
-    noRuns: "No fine-tuning runs yet.",
-  },
-  es: {
-    title: "Fine-tuning local de LLM",
-    subtitle: "Entrena un adaptador LoRA/QLoRA y úsalo en Generative.",
-    runs: "Ejecuciones",
-    inventory: "Inventario local",
-    newRun: "Nueva ejecución",
-    model: "Modelo y hardware",
-    dataset: "Mapeo del dataset",
-    configuration: "Configuración",
-    review: "Revisión y ejecución",
-    preflight: "Ejecutar diagnóstico",
-    create: "Crear e iniciar",
-    open: "Abrir en Generative",
-    cancel: "Cancelar",
-    delete: "Eliminar",
-    noRuns: "Aún no hay ejecuciones de fine-tuning.",
-  },
-};
 
 const quickParameters = {
   preset: "quick_test",
@@ -130,13 +94,12 @@ function bytes(value) {
 
 export default function FineTuning() {
   const navigate = useNavigate();
-  const { i18n } = useTranslation();
-  const lang = i18n.language?.split("-")[0] === "es" ? "es" : "en";
-  const t = copy[lang];
+  const { t } = useTranslation(["generative", "common"]);
   const [tab, setTab] = useState(0);
   const [step, setStep] = useState(0);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [catalog, setCatalog] = useState(null);
   const [datasets, setDatasets] = useState([]);
   const [columns, setColumns] = useState([]);
@@ -289,12 +252,20 @@ export default function FineTuning() {
     const format = draft.dataset_mapping.format;
     const fields =
       format === "text"
-        ? [["text_column", "Text"]]
+        ? [["text_column", t("generative:fineTuning.label.textColumn")]]
         : format === "messages"
-          ? [["messages_column", "Messages"]]
+          ? [
+              [
+                "messages_column",
+                t("generative:fineTuning.label.messagesColumn"),
+              ],
+            ]
           : [
-              ["prompt_column", "Prompt"],
-              ["completion_column", "Completion"],
+              ["prompt_column", t("generative:fineTuning.label.promptColumn")],
+              [
+                "completion_column",
+                t("generative:fineTuning.label.completionColumn"),
+              ],
             ];
     return fields.map(([field, label]) => (
       <FormControl fullWidth key={field}>
@@ -314,11 +285,34 @@ export default function FineTuning() {
     ));
   };
 
+  const numberField = (field, label) => (
+    <TextField
+      key={field}
+      type="number"
+      label={label}
+      value={draft.training_parameters[field]}
+      onChange={(event) =>
+        setDraft((current) => ({
+          ...current,
+          training_parameters: {
+            ...current.training_parameters,
+            [field]: Number(event.target.value),
+          },
+        }))
+      }
+    />
+  );
+
   const renderWizard = () => (
     <Card variant="outlined">
       <CardContent>
         <Stepper activeStep={step} alternativeLabel sx={{ mb: 4 }}>
-          {[t.model, t.dataset, t.configuration, t.review].map((label) => (
+          {[
+            t("generative:fineTuning.label.stepModel"),
+            t("generative:fineTuning.label.stepDataset"),
+            t("generative:fineTuning.label.stepConfiguration"),
+            t("generative:fineTuning.label.stepReview"),
+          ].map((label) => (
             <Step key={label}>
               <StepLabel>{label}</StepLabel>
             </Step>
@@ -327,16 +321,18 @@ export default function FineTuning() {
         {step === 0 && (
           <Stack spacing={2}>
             <TextField
-              label="Name"
+              label={t("generative:fineTuning.label.name")}
               value={draft.name}
               onChange={(event) =>
                 setDraft({ ...draft, name: event.target.value })
               }
             />
             <FormControl fullWidth>
-              <InputLabel>Base model</InputLabel>
+              <InputLabel>
+                {t("generative:fineTuning.label.baseModel")}
+              </InputLabel>
               <Select
-                label="Base model"
+                label={t("generative:fineTuning.label.baseModel")}
                 value={draft.base_model_id}
                 onChange={(event) =>
                   setDraft({ ...draft, base_model_id: event.target.value })
@@ -350,9 +346,9 @@ export default function FineTuning() {
               </Select>
             </FormControl>
             <FormControl fullWidth>
-              <InputLabel>Method</InputLabel>
+              <InputLabel>{t("generative:fineTuning.label.method")}</InputLabel>
               <Select
-                label="Method"
+                label={t("generative:fineTuning.label.method")}
                 value={draft.method}
                 onChange={(event) =>
                   setDraft({ ...draft, method: event.target.value })
@@ -367,9 +363,11 @@ export default function FineTuning() {
         {step === 1 && (
           <Stack spacing={2}>
             <FormControl fullWidth>
-              <InputLabel>Dataset</InputLabel>
+              <InputLabel>
+                {t("generative:fineTuning.label.dataset")}
+              </InputLabel>
               <Select
-                label="Dataset"
+                label={t("generative:fineTuning.label.dataset")}
                 value={draft.dataset_id}
                 onChange={(event) =>
                   setDraft({ ...draft, dataset_id: event.target.value })
@@ -383,9 +381,9 @@ export default function FineTuning() {
               </Select>
             </FormControl>
             <FormControl fullWidth>
-              <InputLabel>Format</InputLabel>
+              <InputLabel>{t("generative:fineTuning.label.format")}</InputLabel>
               <Select
-                label="Format"
+                label={t("generative:fineTuning.label.format")}
                 value={draft.dataset_mapping.format}
                 onChange={(event) => setMapping("format", event.target.value)}
               >
@@ -403,9 +401,11 @@ export default function FineTuning() {
           <FormSchemaLayout>
             <Stack spacing={2}>
               <FormControl fullWidth>
-                <InputLabel>Preset</InputLabel>
+                <InputLabel>
+                  {t("generative:fineTuning.label.preset")}
+                </InputLabel>
                 <Select
-                  label="Preset"
+                  label={t("generative:fineTuning.label.preset")}
                   value={draft.training_parameters.preset}
                   onChange={(event) => choosePreset(event.target.value)}
                 >
@@ -418,30 +418,42 @@ export default function FineTuning() {
                   )}
                 </Select>
               </FormControl>
-              {[
-                ["max_samples", "Max samples"],
-                ["max_steps", "Max steps"],
-                ["max_length", "Sequence length"],
-                ["gradient_accumulation_steps", "Gradient accumulation"],
-                ["learning_rate", "Learning rate"],
-                ["lora_r", "LoRA rank"],
-              ].map(([field, label]) => (
-                <TextField
-                  key={field}
-                  type="number"
-                  label={label}
-                  value={draft.training_parameters[field]}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      training_parameters: {
-                        ...current.training_parameters,
-                        [field]: Number(event.target.value),
-                      },
-                    }))
-                  }
-                />
-              ))}
+              {numberField(
+                "max_samples",
+                t("generative:fineTuning.label.maxSamples"),
+              )}
+              {numberField(
+                "max_steps",
+                t("generative:fineTuning.label.maxSteps"),
+              )}
+              <Button
+                size="small"
+                onClick={() => setShowAdvanced((current) => !current)}
+              >
+                {showAdvanced
+                  ? t("generative:fineTuning.button.hideAdvanced")
+                  : t("generative:fineTuning.button.showAdvanced")}
+              </Button>
+              <Collapse in={showAdvanced}>
+                <Stack spacing={2}>
+                  {numberField(
+                    "max_length",
+                    t("generative:fineTuning.label.sequenceLength"),
+                  )}
+                  {numberField(
+                    "gradient_accumulation_steps",
+                    t("generative:fineTuning.label.gradientAccumulation"),
+                  )}
+                  {numberField(
+                    "learning_rate",
+                    t("generative:fineTuning.label.learningRate"),
+                  )}
+                  {numberField(
+                    "lora_r",
+                    t("generative:fineTuning.label.loraRank"),
+                  )}
+                </Stack>
+              </Collapse>
             </Stack>
           </FormSchemaLayout>
         )}
@@ -450,13 +462,16 @@ export default function FineTuning() {
             <Typography variant="h6">{draft.name}</Typography>
             <Typography color="text.secondary">
               {draft.base_model_id} · {draft.method.toUpperCase()} · dataset #
-              {draft.dataset_id} · {draft.training_parameters.max_steps} steps
+              {draft.dataset_id} · {draft.training_parameters.max_steps}{" "}
+              {t("generative:fineTuning.label.stepsUnit")}
             </Typography>
             {report && (
               <>
                 <Alert severity={report.ready ? "success" : "error"}>
-                  {report.ready ? "Preflight ready" : "Preflight blocked"} ·{" "}
-                  {report.hardware.device}
+                  {report.ready
+                    ? t("generative:fineTuning.label.preflightReady")
+                    : t("generative:fineTuning.label.preflightBlocked")}{" "}
+                  · {report.hardware.device}
                 </Alert>
                 {report.blockers.map((issue) => (
                   <Alert severity="error" key={issue.code}>
@@ -469,8 +484,10 @@ export default function FineTuning() {
                   </Alert>
                 ))}
                 <Typography variant="body2">
-                  {report.train_rows} train / {report.validation_rows}{" "}
-                  validation
+                  {t("generative:fineTuning.label.rowsSummary", {
+                    train: report.train_rows,
+                    validation: report.validation_rows,
+                  })}
                 </Typography>
                 <Box component="pre" sx={{ overflow: "auto", fontSize: 12 }}>
                   {JSON.stringify(report.preview, null, 2)}
@@ -479,14 +496,14 @@ export default function FineTuning() {
             )}
             <Stack direction="row" spacing={1}>
               <Button variant="outlined" onClick={runPreflight} disabled={busy}>
-                {t.preflight}
+                {t("generative:fineTuning.button.runPreflight")}
               </Button>
               <Button
                 variant="contained"
                 onClick={createAndStart}
                 disabled={busy || (report && !report.ready)}
               >
-                {t.create}
+                {t("generative:fineTuning.button.createAndStart")}
               </Button>
             </Stack>
           </Stack>
@@ -497,7 +514,7 @@ export default function FineTuning() {
           disabled={step === 0}
           onClick={() => setStep((current) => current - 1)}
         >
-          Back
+          {t("common:back")}
         </Button>
         {step < 3 && (
           <Button
@@ -505,7 +522,7 @@ export default function FineTuning() {
             disabled={step === 1 && !draft.dataset_id}
             onClick={() => setStep((current) => current + 1)}
           >
-            Next
+            {t("common:next")}
           </Button>
         )}
       </CardActions>
@@ -514,7 +531,11 @@ export default function FineTuning() {
 
   const renderRuns = () => (
     <Stack spacing={2}>
-      {!runs.length && <Alert severity="info">{t.noRuns}</Alert>}
+      {!runs.length && (
+        <Alert severity="info">
+          {t("generative:fineTuning.message.noRuns")}
+        </Alert>
+      )}
       {runs.map((run) => (
         <Card variant="outlined" key={run.id}>
           <CardContent>
@@ -547,6 +568,18 @@ export default function FineTuning() {
                 {run.error_message}
               </Alert>
             )}
+            {run.metrics?.health_warnings?.length ? (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                <Typography variant="body2">
+                  {t("generative:fineTuning.message.healthWarnings")}:
+                </Typography>
+                {run.metrics.health_warnings.map((warning, index) => (
+                  <Typography variant="caption" component="div" key={index}>
+                    {warning.message}
+                  </Typography>
+                ))}
+              </Alert>
+            ) : null}
             {run.metrics && (
               <Typography component="pre" variant="caption">
                 {JSON.stringify(run.metrics, null, 2)}
@@ -559,7 +592,7 @@ export default function FineTuning() {
                 startIcon={<PlayArrowIcon />}
                 onClick={() => openInGenerative(run)}
               >
-                {t.open}
+                {t("generative:fineTuning.button.openInGenerative")}
               </Button>
             )}
             {["queued", "running"].includes(run.status) && (
@@ -571,7 +604,7 @@ export default function FineTuning() {
                   await refresh();
                 }}
               >
-                {t.cancel}
+                {t("common:cancel")}
               </Button>
             )}
             {!["queued", "running"].includes(run.status) && (
@@ -579,7 +612,14 @@ export default function FineTuning() {
                 color="error"
                 startIcon={<DeleteOutlineIcon />}
                 onClick={async () => {
-                  if (!window.confirm(`${t.delete} ${run.name}?`)) return;
+                  if (
+                    !window.confirm(
+                      t("generative:fineTuning.message.deleteConfirm", {
+                        name: run.name,
+                      }),
+                    )
+                  )
+                    return;
                   try {
                     await deleteFineTuningRun(run.id);
                     await refresh();
@@ -588,7 +628,7 @@ export default function FineTuning() {
                   }
                 }}
               >
-                {t.delete}
+                {t("common:delete")}
               </Button>
             )}
           </CardActions>
@@ -619,7 +659,14 @@ export default function FineTuning() {
                   color="error"
                   disabled={item.in_use}
                   onClick={async () => {
-                    if (!window.confirm(`${t.delete} ${item.name}?`)) return;
+                    if (
+                      !window.confirm(
+                        t("generative:fineTuning.message.deleteConfirm", {
+                          name: item.name,
+                        }),
+                      )
+                    )
+                      return;
                     try {
                       await deleteLocalModel(item.key);
                       await refresh();
@@ -628,7 +675,7 @@ export default function FineTuning() {
                     }
                   }}
                 >
-                  {t.delete}
+                  {t("common:delete")}
                 </Button>
               </CardActions>
             )}
@@ -645,11 +692,15 @@ export default function FineTuning() {
           startIcon={<ArrowBackIcon />}
           onClick={() => navigate("/app/generative")}
         >
-          Generative
+          {t("generative:label.generativeModule")}
         </Button>
         <Box flex={1}>
-          <Typography variant="h4">{t.title}</Typography>
-          <Typography color="text.secondary">{t.subtitle}</Typography>
+          <Typography variant="h4">
+            {t("generative:fineTuning.title")}
+          </Typography>
+          <Typography color="text.secondary">
+            {t("generative:fineTuning.subtitle")}
+          </Typography>
         </Box>
         <Button
           variant="contained"
@@ -658,7 +709,7 @@ export default function FineTuning() {
             setTab(0);
           }}
         >
-          {t.newRun}
+          {t("generative:fineTuning.button.newRun")}
         </Button>
       </Stack>
       <Divider sx={{ mb: 2 }} />
@@ -677,8 +728,8 @@ export default function FineTuning() {
             onChange={(_, value) => setTab(value)}
             sx={{ mb: 2 }}
           >
-            <Tab label={t.runs} />
-            <Tab label={t.inventory} />
+            <Tab label={t("generative:fineTuning.label.runs")} />
+            <Tab label={t("generative:fineTuning.label.inventory")} />
           </Tabs>
           {!catalog ? (
             <CircularProgress />

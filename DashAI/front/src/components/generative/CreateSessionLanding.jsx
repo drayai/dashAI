@@ -35,8 +35,8 @@ export default function CreateSessionLanding() {
         },
         {
           name: "fine_tuning",
-          display_name: "Fine-tuning local",
-          description: "Entrena adaptadores LoRA/QLoRA con datasets de DashAI.",
+          display_name: t("generative:label.fineTuningModule"),
+          description: t("generative:label.fineTuningModuleDescription"),
           Icon: ModelTrainingIcon,
           onClick: handleFineTuning,
         },

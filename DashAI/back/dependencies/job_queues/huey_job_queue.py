@@ -272,6 +272,25 @@ class HueyJobQueue(BaseJobQueue):
             if "progress_message" not in existing:
                 conn.execute("ALTER TABLE task_copy ADD COLUMN progress_message TEXT")
 
+    def task_snapshot(self, job_id: str) -> dict | None:
+        """Return ``{'pending': bool, 'mirror_status': str | None}`` for a task.
+
+        ``pending`` is True while the task is still waiting in the
+        persistent queue, meaning a worker will execute it after a restart.
+        ``mirror_status`` comes from the 'task_copy' table and may lag the
+        real task state. Returns None-ish data for unknown ids.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM task WHERE id = ? AND queue = ? LIMIT 1",
+                (str(job_id), self.huey.storage.name),
+            )
+            pending = cur.fetchone() is not None
+            cur.execute("SELECT status FROM task_copy WHERE id = ?", (str(job_id),))
+            row = cur.fetchone()
+        return {"pending": pending, "mirror_status": row[0] if row else None}
+
     def status(self, job_id: str) -> dict:
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()

@@ -18,6 +18,10 @@ class TrainingCanceledError(Exception):
     """Raised when a fine-tuning run is cooperatively canceled."""
 
 
+class TrainingHealthError(RuntimeError):
+    """Raised when training must stop because numeric health checks failed."""
+
+
 @dataclass
 class FineTuningRequest:
     run_id: int

@@ -16,7 +16,7 @@ Esta rama implementa un primer flujo completo de fine-tuning eficiente de LLMs d
 
 El flujo anterior fue ejecutado de extremo a extremo con QLoRA, Qwen2.5-0.5B-Instruct, 32 ejemplos de Databricks Dolly 15k y una NVIDIA GTX 1080 de 8 GB. Por lo tanto, la integración técnica central es viable. La prueba no constituye todavía una validación de calidad del modelo: se observaron normas de gradiente no finitas y solo se ejecutaron tres pasos.
 
-Los cambios se mantienen sin commit y sin push. Los datos de la prueba están aislados en `E:\DashAI-smoke-finetuning`; no se utilizó ni modificó `E:\DashAI-data`.
+El prototipo fue consolidado como línea base en el commit `21f093ccb` (rama `memoria/fine-tuning-inferencia`, publicada en el fork personal) y la productización continúa en la rama `memoria/glm-weekend-productization`. Los datos de la prueba están aislados en `E:\DashAI-smoke-finetuning`; no se utilizó ni modificó `E:\DashAI-data`.
 
 ## Arquitectura implementada
 
@@ -153,7 +153,49 @@ Los tres valores de pérdida fueron finitos y el artefacto pudo usarse en infere
 
 ### Cancelación y recuperación
 
-La cancelación cooperativa se observa en el límite de un paso. En la GTX 1080 un paso tomó cerca de tres minutos, por lo que la latencia puede ser demasiado alta para la experiencia esperada. Una cancelación fuerte requeriría aislar cada entrenamiento en un subproceso administrado. Además, la aplicación todavía no reconcilia automáticamente runs `running` que quedaron huérfanos por cierre abrupto; el script de smoke sí limpia sus propios intentos anteriores, pero eso no reemplaza una política de producción.
+La cancelación cooperativa se observa en el límite de un paso. En la GTX 1080 un paso tomó cerca de tres minutos, por lo que la latencia puede ser demasiado alta para la experiencia esperada. Una cancelación fuerte requeriría aislar cada entrenamiento en un subproceso administrado. La reconciliación de runs huérfanos al arrancar fue implementada en la fase de consolidación (ver «Consolidación y robustez»); el script de smoke también limpia sus propios intentos anteriores.
+
+## Consolidación y robustez (rama `memoria/glm-weekend-productization`)
+
+La línea base del prototipo se robusteció en cinco frentes. Todo lo listado aquí está cubierto por pruebas automatizadas; lo que requiere hardware se marca explícitamente.
+
+### Recuperación al arrancar
+
+`DashAI/back/fine_tuning/reconciliation.py` se ejecuta dentro de `create_app` después de las migraciones. Es idempotente y:
+
+- marca `failed` todo run `running` con el mensaje «Training was interrupted because DashAI stopped...» (nunca lo completa por la presencia de un directorio);
+- conserva un run `queued` solo si su tarea sigue pendiente en la tabla `task` de la cola Huey (nuevo método `HueyJobQueue.task_snapshot`); si la tarea desapareció, lo marca `failed`. Si un worker vivo estaba ejecutando la tarea, el propio job la re-marca `running`/`completed`, de modo que el estado final siempre es el veraz;
+- pone en cuarentena (renombra a `orphaned-<nombre>-<fecha>`, no borra) los directorios `*.tmp` directamente dentro de `FINE_TUNING_PATH`;
+- elimina cualquier lock GPU residual.
+
+Un run interrumpido puede reiniciarse desde la interfaz porque `start` solo rechaza estados activos o `completed`.
+
+### Exclusión de GPU entre procesos
+
+`DashAI/back/fine_tuning/resource_lock.py` implementa un lock basado en archivo con creación atómica (`O_CREAT|O_EXCL`) dentro de `FINE_TUNING_PATH/gpu.lock`. El archivo registra pid y dueño; un lock cuyo proceso dueño murió se descarta, y `release` se niega a liberar un lock ajeno. La comprobación ocurre en dos niveles: `POST /runs/{id}/start` responde 409 con mensaje accionable, y el worker re-verifica dentro de `FineTuningJob.run` (espera acotada de 10 s) para cerrar la carrera entre dos inicios casi simultáneos. La liberación ocurre en un `finally` que cubre éxito, cancelación y excepción. La inferencia con adaptador (`GenerativeJob`) detecta el lock antes de cargar el modelo y falla con el mismo mensaje accionable en lugar de arriesgar un OOM.
+
+### Liberación de recursos
+
+`FineTuningJob.run` libera el lock en `finally`. El backend de Transformers suelta tokenizer, modelo, trainer y datasets con `del` dentro de su propio `finally` antes de `gc.collect()` y `torch.cuda.empty_cache()`: el `del` rebinda las variables del frame aunque un traceback conserve el frame durante la propagación del error, por lo que la VRAM queda disponible antes de que la excepción llegue a Huey.
+
+### Salud numérica
+
+El callback de entrenamiento registra por paso: pérdida, norma de gradiente, learning rate, paso, época (vía `logs` de HF), duración de cada paso y advertencias. Al terminar, `metrics` incluye `health_warnings` y `last_logged`, y `runtime_metadata` agrega `health` con duraciones por paso y su media, pico de VRAM y dtypes entrenables. Reglas de comportamiento:
+
+- pérdida no finita → el run falla (`TrainingHealthError`) y el adaptador no se publica;
+- `grad_norm` no finito → advertencia estructurada visible como Alert en la página de runs;
+- `_json_safe` convierte NaN/Inf a `null` para que el JSON de la API sea siempre válido.
+
+### Internacionalización
+
+`FineTuning.jsx` abandonó su diccionario manual inglés/español: ahora usa `useTranslation(["generative", "common"])` con claves nuevas bajo `generative:fineTuning.*` (traducciones completas en `en` y `es`; `pt`, `de` y `zh` caen al fallback estándar inglés). Los textos hardcodeados del wizard y de `CreateSessionLanding.jsx` fueron migrados, las advertencias numéricas se muestran como Alert, y los parámetros del paso de configuración se separaron en básicos y avanzados (plegable).
+
+### Validación de la consolidación
+
+- Backend: `python -m pytest -q tests/back/fine_tuning tests/back/api/test_fine_tuning_api.py tests/back/api/test_fine_tuning_robustness.py` — 40 pruebas pasando (reconciliación y su idempotencia, cuarentena de temporales, lock y su toma de control sobre pids muertos, exclusión y liberación en éxito/error, sanidad de JSON, mensajes de GPU ocupada).
+- Frontend: `yarn test --runTestsByPath src/api/fineTuning.test.ts src/pages/generative/FineTuning.test.jsx` — 6 pruebas, incluida una que cambia el idioma a español y verifica claves i18n reales.
+- Ruff sin errores en los archivos modificados; build de producción del frontend verificado.
+- La política de pérdida no finita y las advertencias de `grad_norm` están validadas con pruebas unitarias sobre los helpers; su comportamiento en GPU real se evalúa en la prueba de estabilidad descrita más abajo.
 
 ### Semántica del downgrade
 

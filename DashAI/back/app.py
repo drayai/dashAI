@@ -17,6 +17,7 @@ from DashAI.back.dependencies.database.backfill import (
     backfill_explorer_artifacts,
 )
 from DashAI.back.dependencies.database.migrate import migrate_on_startup
+from DashAI.back.fine_tuning.reconciliation import reconcile_fine_tuning
 from DashAI.back.seeds import seed_datasets_if_first_run
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,16 @@ def create_app(
     # explorations can only be upgraded while their explorer is installed.
     logger.debug("4b-bis. Backfilling explorer render artifacts.")
     backfill_explorer_artifacts(di["session_factory"])
+
+    logger.debug("4b-ter. Reconciling fine-tuning runs after a restart.")
+    try:
+        reconcile_fine_tuning(
+            config=config,
+            session_factory=di["session_factory"],
+            job_queue=di["job_queue"],
+        )
+    except Exception:
+        logger.exception("Fine-tuning reconciliation failed at startup.")
 
     if enable_seeding:
         logger.debug("4c. Seeding initial datasets if first run.")

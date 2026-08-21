@@ -17,12 +17,17 @@ from DashAI.back.fine_tuning.huggingface_backend import (
     HuggingFaceFineTuningBackend,
 )
 from DashAI.back.fine_tuning.model_store import ensure_model
+from DashAI.back.fine_tuning.resource_lock import training_lock
 from DashAI.back.job.base_job import BaseJob, JobError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
+
+# How long the worker waits for the GPU lock before failing the run with an
+# actionable error (smooths the transition between back-to-back jobs).
+WORKER_LOCK_WAIT_SECONDS = 10.0
 
 
 class FineTuningJob(BaseJob):
@@ -68,6 +73,9 @@ class FineTuningJob(BaseJob):
         session_factory = di["session_factory"]
         config = di["config"]
         run_id = self.kwargs["run_id"]
+        lock = training_lock(config)
+        lock_owner = f"fine_tuning_run_{run_id}"
+        lock_acquired = False
 
         def update(
             fraction: float, message: str, metrics: dict[str, Any] | None = None
@@ -96,6 +104,11 @@ class FineTuningJob(BaseJob):
                     run.mark_canceled()
                     db.commit()
                     return
+                # Re-check exclusion inside the worker: two runs enqueued at
+                # the same time both pass the API check, but only one may
+                # hold the GPU. The short wait smooths job transitions.
+                lock.acquire(lock_owner, wait_seconds=WORKER_LOCK_WAIT_SECONDS)
+                lock_acquired = True
                 run.mark_running()
                 run.huey_id = self.kwargs.get("huey_id", run.huey_id)
                 db.commit()
@@ -165,3 +178,6 @@ class FineTuningJob(BaseJob):
                     run.mark_failed(str(exc))
                     db.commit()
             raise JobError(str(exc)) from exc
+        finally:
+            if lock_acquired:
+                lock.release(lock_owner)

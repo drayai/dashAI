@@ -27,6 +27,7 @@ from DashAI.back.fine_tuning.model_store import (
     read_model_metadata,
 )
 from DashAI.back.fine_tuning.preflight import run_preflight
+from DashAI.back.fine_tuning.resource_lock import training_lock
 from DashAI.back.job.fine_tuning_job import FineTuningJob
 
 if TYPE_CHECKING:
@@ -131,6 +132,11 @@ async def start_run(
             raise HTTPException(
                 status_code=409, detail=f"Run cannot start from '{run.status.value}'."
             )
+        # Advisory check only: the worker re-checks under the lock to close
+        # the race between concurrent start requests.
+        lock = training_lock(_config())
+        if lock.is_locked():
+            raise HTTPException(status_code=409, detail=lock.busy_message())
         run.progress = 0.0
         run.artifact_path = None
         run.metrics = None

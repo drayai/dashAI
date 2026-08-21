@@ -629,6 +629,7 @@ class FineTuningRun(Base):
         self.status = FineTuningStatus.RUNNING
         self.start_time = datetime.now()
         self.progress_message = "Preparing training"
+        self.error_message = None
 
     def mark_completed(self) -> None:
         self.status = FineTuningStatus.COMPLETED
