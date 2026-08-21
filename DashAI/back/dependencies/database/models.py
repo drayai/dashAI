@@ -561,6 +561,13 @@ class GenerativeSession(Base):
         back_populates="generative_sessions"
     )
 
+    local_model_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("managed_local_model.id", ondelete="SET NULL"), nullable=True
+    )
+    local_model: Mapped[Optional["ManagedLocalModel"]] = relationship(
+        back_populates="generative_sessions"
+    )
+
 
 class FineTuningRun(Base):
     """A persistent, reproducible local LLM fine-tuning execution."""
@@ -647,6 +654,46 @@ class FineTuningRun(Base):
         self.status = FineTuningStatus.CANCELED
         self.progress_message = "Training canceled"
         self.end_time = datetime.now()
+
+
+class ManagedLocalModel(Base):
+    """A catalog base model downloaded into DashAI-managed storage."""
+
+    __tablename__ = "managed_local_model"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model_key: Mapped[str] = mapped_column(String, nullable=False)
+    base_model_revision: Mapped[str] = mapped_column(
+        String, nullable=False, default="main"
+    )
+    resolved_revision: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[DatafileStatus] = mapped_column(
+        Enum(
+            DatafileStatus,
+            name="managedmodelstatus",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        nullable=False,
+        default=DatafileStatus.DOWNLOADING,
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created: Mapped[DateTime] = mapped_column(DateTime, default=datetime.now)
+    last_modified: Mapped[DateTime] = mapped_column(
+        DateTime, default=datetime.now, onupdate=datetime.now
+    )
+
+    generative_sessions: Mapped[List["GenerativeSession"]] = relationship(
+        back_populates="local_model"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "model_key",
+            "base_model_revision",
+            name="uq_managed_model_key_revision",
+        ),
+    )
 
 
 class Pipeline(Base):

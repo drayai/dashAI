@@ -151,6 +151,8 @@ El primer intento falló en el primer backward con `_amp_foreach_non_finite_chec
 
 Los tres valores de pérdida fueron finitos y el artefacto pudo usarse en inferencia, pero `grad_norm` fue `NaN` en todos los pasos. Por eso no debe declararse que QLoRA es numéricamente estable en esta combinación de Pascal, PyTorch, bitsandbytes y versiones de entrenamiento. Se requiere una prueba más larga comparando escalado de pérdida, learning rate, optimizador, dtype de capas normalizadoras y versiones compatibles. También conviene convertir esta señal en un criterio de fallo o advertencia configurable.
 
+> Actualización (consolidación): la prueba real de 15 pasos se ejecutó y la señal quedó instrumentada; ver «Prueba real de estabilidad» más abajo.
+
 ### Cancelación y recuperación
 
 La cancelación cooperativa se observa en el límite de un paso. En la GTX 1080 un paso tomó cerca de tres minutos, por lo que la latencia puede ser demasiado alta para la experiencia esperada. Una cancelación fuerte requeriría aislar cada entrenamiento en un subproceso administrado. La reconciliación de runs huérfanos al arrancar fue implementada en la fase de consolidación (ver «Consolidación y robustez»); el script de smoke también limpia sus propios intentos anteriores.
@@ -196,6 +198,28 @@ El callback de entrenamiento registra por paso: pérdida, norma de gradiente, le
 - Frontend: `yarn test --runTestsByPath src/api/fineTuning.test.ts src/pages/generative/FineTuning.test.jsx` — 6 pruebas, incluida una que cambia el idioma a español y verifica claves i18n reales.
 - Ruff sin errores en los archivos modificados; build de producción del frontend verificado.
 - La política de pérdida no finita y las advertencias de `grad_norm` están validadas con pruebas unitarias sobre los helpers; su comportamiento en GPU real se evalúa en la prueba de estabilidad descrita más abajo.
+
+#### Prueba real de estabilidad (15 pasos, QLoRA, GTX 1080)
+
+`scripts/fine_tuning_stability.py` ejecutó 15 pasos con 64 ejemplos de Dolly (seed 42) contra `E:\DashAI-smoke-finetuning`, reutilizando el modelo ya descargado. Resultado en `stability_result.json`: estado `completed`, 2081 s en total, 136,6 s/paso de media, pérdida finita y decreciente (último valor registrado 1,58; `train_loss` final 2,74), pico de VRAM 1,70 GB, 336 parámetros entrenables en FP32, learning rate con calendario lineal visible en `last_logged`.
+
+**Hallazgo principal**: `grad_norm` fue `NaN` solo en los pasos 1–4; del paso 5 al 15 fue finito (3,02 en el último). El NaN del smoke de 3 pasos es, por tanto, transitorio y autolimitado en esta configuración, no una inestabilidad persistente. La instrumentación nueva lo reporta exactamente como cuatro advertencias estructuradas sin fallar el run (la pérdida siempre fue finita), que es el comportamiento especificado. No se ejecutaron las dos configuraciones adicionales permitidas: la evidencia caracteriza el fenómeno y el presupuesto de GPU se reserva para el resto de la sesión. Tiempo de GPU consumido hasta ahora: ~35 minutos.
+
+## Administración e inferencia local (Hito 2)
+
+MVP inspirado en LM Studio, limitado al flujo base+adaptadores de Transformers:
+
+- **Entidad `ManagedLocalModel`** (migración `c3f5a9b7d2e1`, verificada con upgrade/downgrade/upgrade sobre base temporal) que trackea descargas con estados `downloading`/`ready`/`error`, revisión resuelta y tamaño.
+- **Descarga mediante jobs**: `ManagedModelDownloadJob` reutiliza `ensure_model` (mismo almacenamiento administrado y publicación atómica) y reporta progreso por el sistema de jobs existente. `POST /api/v1/fine-tuning/models/{key}/download` responde 202 y rechaza duplicados con 409.
+- **Inventario unificado** en `GET /models`: modelos del catálogo no descargados (con VRAM recomendada y botón de descarga), descargas en curso/errores con reintentos, snapshots adoptados (los descargados por preflight antes de esta entidad se reportan `ready` y la descarga los adopta sin redescargar) y adaptadores con su run. La eliminación se bloquea (409) si el modelo está descargando, en un run activo o referenciado por una sesión.
+- **Componente interno `LocalManagedTextGenerationModel`** (oculto del selector como `PeftAdapterTextGenerationModel`): resuelve el modelo por `local_model_id` del inventario — nunca por una ruta enviada por el cliente —, aplica la plantilla de chat, usa `trust_remote_code=False`, soporta `device` CPU/GPU y expone `top_k` y `seed` (también añadidos, opcionales, al adaptador PEFT para compatibilidad con sesiones antiguas).
+- **`GenerativeSession.local_model_id`** nullable con FK `SET NULL`; las sesiones históricas sin la referencia siguen funcionando. `GenerativeJob` valida estado `ready`, resuelve la ruta administrada y comprueba el lock GPU antes de cargar.
+- **Frontend**: el inventario muestra estado con chip traducido, VRAM recomendada, descarga/reintento, apertura de sesión desde modelo base (`LocalManagedTextGenerationModel`) y desde adaptador; polling mientras hay descargas activas.
+
+### Validación del Hito 2
+
+- Ejecución real (`scripts/local_model_inference_check.py`, resultado en `base_inference_result.json`): adopción del snapshot existente vía endpoint de descarga, sesión desde el modelo base con `top_k`/`seed`, y generación correcta («One primary color is red...») en 19,2 s sobre la GTX 1080. Con esto el MVP cumple los seis criterios de aceptación: descargar/reutilizar modelo curado, inventario, sesión desde base, parámetros de generación, respuesta generada, y el flujo equivalente con adaptador ya validado en el smoke del prototipo.
+- Pruebas automatizadas (51 backend + 8 frontend pasando): inventario con modelos no descargados, descarga con estado y 409 en duplicados, eliminación bloqueada por sesión, validación de referencias `local_model_id` (404/400), inyección de `_base_model_path` en `GenerativeJob` mediante registro simulado, descarga y sesión desde base en la interfaz, y compatibilidad de sesiones antiguas.
 
 ### Semántica del downgrade
 

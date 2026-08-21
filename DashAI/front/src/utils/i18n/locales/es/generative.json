@@ -76,7 +76,9 @@
       "runPreflight": "Ejecutar diagnóstico",
       "openInGenerative": "Abrir en Generative",
       "showAdvanced": "Opciones avanzadas",
-      "hideAdvanced": "Ocultar opciones avanzadas"
+      "hideAdvanced": "Ocultar opciones avanzadas",
+      "download": "Descargar",
+      "retryDownload": "Reintentar descarga"
     },
     "label": {
       "runs": "Ejecuciones",
@@ -104,7 +106,12 @@
       "preflightReady": "Diagnóstico listo",
       "preflightBlocked": "Diagnóstico bloqueado",
       "rowsSummary": "{{train}} de entrenamiento / {{validation}} de validación",
-      "stepsUnit": "pasos"
+      "stepsUnit": "pasos",
+      "statusNotDownloaded": "Sin descargar",
+      "statusDownloading": "Descargando",
+      "statusReady": "Listo",
+      "statusError": "Error",
+      "recommendedVram": "VRAM recomendada: {{gb}} GB"
     },
     "message": {
       "noRuns": "Aún no hay ejecuciones de fine-tuning.",

@@ -128,8 +128,11 @@ class LocalModelInfo(BaseModel):
     kind: Literal["base", "adapter"]
     name: str
     source: str
-    path: str
-    size_bytes: int
+    path: Optional[str] = None
+    size_bytes: int = 0
     status: str
     run_id: Optional[int] = None
+    local_model_id: Optional[int] = None
+    recommended_vram_gb: Optional[int] = None
+    downloadable: bool = False
     in_use: bool = False

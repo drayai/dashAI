@@ -76,7 +76,9 @@
       "runPreflight": "Run preflight",
       "openInGenerative": "Open in Generative",
       "showAdvanced": "Advanced options",
-      "hideAdvanced": "Hide advanced options"
+      "hideAdvanced": "Hide advanced options",
+      "download": "Download",
+      "retryDownload": "Retry download"
     },
     "label": {
       "runs": "Runs",
@@ -104,7 +106,12 @@
       "preflightReady": "Preflight ready",
       "preflightBlocked": "Preflight blocked",
       "rowsSummary": "{{train}} train / {{validation}} validation",
-      "stepsUnit": "steps"
+      "stepsUnit": "steps",
+      "statusNotDownloaded": "Not downloaded",
+      "statusDownloading": "Downloading",
+      "statusReady": "Ready",
+      "statusError": "Error",
+      "recommendedVram": "Recommended VRAM: {{gb}} GB"
     },
     "message": {
       "noRuns": "No fine-tuning runs yet.",

@@ -40,3 +40,12 @@ export const getLocalModels = async (): Promise<LocalModelInfo[]> =>
 export const deleteLocalModel = async (key: string): Promise<void> => {
   await api.delete(`${endpoint}/models/${encodeURIComponent(key)}`);
 };
+
+export const downloadLocalModel = async (
+  key: string,
+): Promise<{ detail: string; local_model_id: number }> =>
+  (
+    await api.post<{ detail: string; local_model_id: number }>(
+      `${endpoint}/models/${encodeURIComponent(key)}/download`,
+    )
+  ).data;

@@ -9,11 +9,13 @@ from sqlalchemy import exc, select
 from DashAI.back.api.api_v1.schemas.generative_session_params import (
     GenerativeSessionParams,
 )
+from DashAI.back.core.enums.status import DatafileStatus
 from DashAI.back.dependencies.database.models import (
     FineTuningRun,
     GenerativeProcess,
     GenerativeSession,
     GenerativeSessionParameterHistory,
+    ManagedLocalModel,
     ProcessData,
 )
 from DashAI.back.dependencies.downloads.nested import missing_downloads
@@ -73,6 +75,35 @@ async def upload_generative_session(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="A completed fine_tuning_run_id is required.",
+                )
+
+            if params.local_model_id is not None:
+                if params.model_name != "LocalManagedTextGenerationModel":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Managed local models must use "
+                            "LocalManagedTextGenerationModel."
+                        ),
+                    )
+                local_model = db.get(ManagedLocalModel, params.local_model_id)
+                if not local_model:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Managed local model does not exist.",
+                    )
+                if local_model.status != DatafileStatus.READY:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "The managed local model is not ready "
+                            f"(status: {local_model.status.value})."
+                        ),
+                    )
+            elif params.model_name == "LocalManagedTextGenerationModel":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="A ready local_model_id is required.",
                 )
 
             # Guard: model requires download but has not been downloaded -> 409.
@@ -140,6 +171,7 @@ async def upload_generative_session(
                 name=params.name,
                 description=params.description,
                 fine_tuning_run_id=params.fine_tuning_run_id,
+                local_model_id=params.local_model_id,
             )
             db.add(session)
             try:
@@ -171,6 +203,7 @@ async def upload_generative_session(
                 "name": session.name,
                 "description": session.description,
                 "fine_tuning_run_id": session.fine_tuning_run_id,
+                "local_model_id": session.local_model_id,
                 "created": session.created,
                 "last_modified": session.last_modified,
                 "display_name": component_registry[session.task_name]["display_name"],
@@ -276,6 +309,7 @@ async def get_all_generative_sessions(
                     "name": session.name,
                     "description": session.description,
                     "fine_tuning_run_id": session.fine_tuning_run_id,
+                    "local_model_id": session.local_model_id,
                     "created": session.created,
                     "last_modified": session.last_modified,
                 }
@@ -451,6 +485,14 @@ async def update_generative_session(
                         detail=(
                             "Open an adapter from Fine-tuning to create an "
                             "adapter-backed session."
+                        ),
+                    )
+                if model_name == "LocalManagedTextGenerationModel":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Open a managed local model from Fine-tuning to "
+                            "create a base-model session."
                         ),
                     )
                 try:

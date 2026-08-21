@@ -10,7 +10,10 @@ import {
   subscribeAnyDownloadState,
 } from "../models/model/ComponentDownloadControl";
 
-const INTERNAL_FINE_TUNING_MODEL = "PeftAdapterTextGenerationModel";
+const INTERNAL_FINE_TUNING_MODELS = new Set([
+  "PeftAdapterTextGenerationModel",
+  "LocalManagedTextGenerationModel",
+]);
 
 /**
  * Session-level model switcher: lets the user change the model used by a
@@ -37,7 +40,7 @@ export default function ModelSwitcher({
       .then((components) =>
         setModels(
           (components || []).filter(
-            (component) => component.name !== INTERNAL_FINE_TUNING_MODEL,
+            (component) => !INTERNAL_FINE_TUNING_MODELS.has(component.name),
           ),
         ),
       )

@@ -85,9 +85,12 @@ export interface LocalModelInfo {
   kind: "base" | "adapter";
   name: string;
   source: string;
-  path: string;
+  path?: string | null;
   size_bytes: number;
   status: string;
   run_id?: number | null;
+  local_model_id?: number | null;
+  recommended_vram_gb?: number | null;
+  downloadable: boolean;
   in_use: boolean;
 }

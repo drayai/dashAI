@@ -208,6 +208,53 @@ class GenerativeJob(BaseJob):
                             "_base_model_path": str(base_model_path),
                             "_adapter_path": str(artifact_path / "adapter"),
                         }
+                    elif generative_session.local_model_id is not None:
+                        from pathlib import Path
+
+                        from DashAI.back.core.enums.status import DatafileStatus
+                        from DashAI.back.dependencies.database.models import (
+                            ManagedLocalModel,
+                        )
+                        from DashAI.back.fine_tuning.model_store import (
+                            model_directory,
+                        )
+                        from DashAI.back.fine_tuning.resource_lock import (
+                            training_lock,
+                        )
+
+                        # Managed local inference shares the GPU with
+                        # fine-tuning: fail fast with an actionable error
+                        # instead of risking an OOM.
+                        gpu_lock = training_lock(config)
+                        if gpu_lock.is_locked():
+                            raise JobError(gpu_lock.busy_message())
+
+                        managed_model = db.get(
+                            ManagedLocalModel, generative_session.local_model_id
+                        )
+                        if (
+                            not managed_model
+                            or managed_model.status != DatafileStatus.READY
+                        ):
+                            raise JobError(
+                                "The managed local model is not ready. "
+                                "Download it again from the fine-tuning "
+                                "inventory."
+                            )
+                        base_model_path = model_directory(
+                            Path(config["LLM_MODELS_PATH"]),
+                            managed_model.model_key,
+                            managed_model.base_model_revision,
+                        )
+                        if not base_model_path.exists():
+                            raise JobError(
+                                "The managed local model was removed. Download "
+                                "it again before inference."
+                            )
+                        params = {
+                            **params,
+                            "_base_model_path": str(base_model_path),
+                        }
                     model: BaseGenerativeModel = model_class(**params)
                 except JobError:
                     generative_process.set_status_as_error()

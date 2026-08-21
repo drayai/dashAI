@@ -53,6 +53,7 @@ jest.mock("../../api/fineTuning", () => ({
         source: "qwen2.5-0.5b-instruct",
         path: "E:/adapter",
         size_bytes: 1024,
+        status: "completed",
       },
     ]),
   ),
@@ -62,6 +63,7 @@ jest.mock("../../api/fineTuning", () => ({
   cancelFineTuningRun: jest.fn(),
   deleteFineTuningRun: jest.fn(),
   deleteLocalModel: jest.fn(),
+  downloadLocalModel: jest.fn(),
 }));
 
 jest.mock("../../api/generativeTask", () => ({
@@ -71,6 +73,7 @@ jest.mock("../../api/generativeTask", () => ({
 import FineTuning from "./FineTuning";
 import {
   deleteLocalModel,
+  downloadLocalModel,
   getFineTuningCatalog,
   getFineTuningRuns,
   getLocalModels,
@@ -116,6 +119,7 @@ beforeEach(() => {
       source: "qwen2.5-0.5b-instruct",
       path: "E:/adapter",
       size_bytes: 1024,
+      status: "completed",
     },
   ]);
 });
@@ -201,6 +205,84 @@ describe("FineTuning page", () => {
     }
   });
 
+  it("downloads a catalog model from the inventory", async () => {
+    getLocalModels.mockResolvedValue([
+      {
+        key: "base:qwen2.5-0.5b-instruct:main",
+        kind: "base",
+        name: "Qwen2.5 0.5B Instruct",
+        source: "Qwen/Qwen2.5-0.5B-Instruct",
+        size_bytes: 0,
+        status: "not_downloaded",
+        recommended_vram_gb: 6,
+        downloadable: true,
+        in_use: false,
+      },
+    ]);
+    downloadLocalModel.mockResolvedValue({
+      detail: "started",
+      local_model_id: 5,
+    });
+    renderWithProviders(<FineTuning />, {
+      route: "/app/generative/fine-tuning",
+    });
+    fireEvent.click(
+      await screen.findByRole("tab", {
+        name: /local inventory|inventario local/i,
+      }),
+    );
+    const downloadButton = await screen.findByRole("button", {
+      name: /download|descargar/i,
+    });
+    await act(async () => fireEvent.click(downloadButton));
+
+    await waitFor(() =>
+      expect(downloadLocalModel).toHaveBeenCalledWith(
+        "base:qwen2.5-0.5b-instruct:main",
+      ),
+    );
+  });
+
+  it("opens a Generative session from a downloaded base model", async () => {
+    createGenerativeSession.mockResolvedValue({ id: 21 });
+    getLocalModels.mockResolvedValue([
+      {
+        key: "base:qwen2.5-0.5b-instruct:main",
+        kind: "base",
+        name: "Qwen2.5 0.5B Instruct",
+        source: "Qwen/Qwen2.5-0.5B-Instruct",
+        path: "E:/model",
+        size_bytes: 1024,
+        status: "ready",
+        local_model_id: 7,
+        recommended_vram_gb: 6,
+        downloadable: false,
+        in_use: false,
+      },
+    ]);
+    renderWithProviders(<FineTuning />, {
+      route: "/app/generative/fine-tuning",
+    });
+    fireEvent.click(
+      await screen.findByRole("tab", {
+        name: /local inventory|inventario local/i,
+      }),
+    );
+    const openButton = await screen.findByRole("button", {
+      name: /open in generative|abrir en generative/i,
+    });
+    await act(async () => fireEvent.click(openButton));
+
+    await waitFor(() =>
+      expect(createGenerativeSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model_name: "LocalManagedTextGenerationModel",
+          local_model_id: 7,
+        }),
+      ),
+    );
+  });
+
   it("confirms deletion of a managed base model", async () => {
     getLocalModels.mockResolvedValue([
       {
@@ -210,6 +292,9 @@ describe("FineTuning page", () => {
         source: "Qwen/Qwen2.5-0.5B-Instruct",
         path: "E:/model",
         size_bytes: 1024,
+        status: "ready",
+        local_model_id: 7,
+        downloadable: false,
         in_use: false,
       },
     ]);

@@ -39,6 +39,7 @@ import {
   createFineTuningRun,
   deleteFineTuningRun,
   deleteLocalModel,
+  downloadLocalModel,
   getFineTuningCatalog,
   getFineTuningRuns,
   getLocalModels,
@@ -129,12 +130,18 @@ export default function FineTuning() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!runs.some((run) => ["queued", "running"].includes(run.status))) return;
+    const busyRuns = runs.some((run) =>
+      ["queued", "running"].includes(run.status),
+    );
+    const busyDownloads = inventory.some(
+      (item) => item.status === "downloading",
+    );
+    if (!busyRuns && !busyDownloads) return;
     const timer = window.setInterval(() => {
       refresh().catch(() => {});
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [runs, refresh]);
+  }, [runs, inventory, refresh]);
 
   useEffect(() => {
     if (!draft.dataset_id) {
@@ -235,6 +242,51 @@ export default function FineTuning() {
           max_new_tokens: 128,
           temperature: 0.7,
           top_p: 0.9,
+          repetition_penalty: 1.05,
+          context_window: 2048,
+          device: "auto",
+        },
+      });
+      navigate(`/app/generative/sessions/${session.id}`);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openBaseInGenerative = async (item) => {
+    setBusy(true);
+    setError("");
+    try {
+      let localModelId = item.local_model_id;
+      if (!localModelId) {
+        // Filesystem snapshots predating tracked downloads are adopted by
+        // the download endpoint without re-downloading the weights.
+        try {
+          localModelId = (await downloadLocalModel(item.key)).local_model_id;
+        } catch (nextError) {
+          await refresh();
+          const current = (await getLocalModels()).find(
+            (candidate) => candidate.key === item.key,
+          );
+          localModelId = current?.local_model_id;
+        }
+      }
+      if (!localModelId) {
+        throw new Error("The managed local model is not ready.");
+      }
+      const session = await createGenerativeSession({
+        name: `${item.name} - ${Date.now()}`,
+        description: `Managed local model ${item.key}`,
+        task_name: "TextToTextGenerationTask",
+        model_name: "LocalManagedTextGenerationModel",
+        local_model_id: localModelId,
+        parameters: {
+          max_new_tokens: 128,
+          temperature: 0.7,
+          top_p: 0.9,
+          top_k: 50,
           repetition_penalty: 1.05,
           context_window: 2048,
           device: "auto",
@@ -637,6 +689,30 @@ export default function FineTuning() {
     </Stack>
   );
 
+  const statusChip = (item) => {
+    if (item.kind === "adapter") {
+      return <Chip label={item.status} size="small" />;
+    }
+    const labelKey = {
+      not_downloaded: "statusNotDownloaded",
+      downloading: "statusDownloading",
+      ready: "statusReady",
+      error: "statusError",
+    }[item.status];
+    const label = labelKey
+      ? t(`generative:fineTuning.label.${labelKey}`)
+      : item.status;
+    const color =
+      item.status === "ready"
+        ? "success"
+        : item.status === "error"
+          ? "error"
+          : item.status === "downloading"
+            ? "info"
+            : "default";
+    return <Chip label={label} size="small" color={color} />;
+  };
+
   const renderInventory = () => (
     <Grid container spacing={2}>
       {inventory.map((item) => (
@@ -645,38 +721,78 @@ export default function FineTuning() {
             <CardContent>
               <Stack direction="row" justifyContent="space-between">
                 <Typography variant="h6">{item.name}</Typography>
-                <Chip label={item.kind} size="small" />
+                {statusChip(item)}
               </Stack>
               <Typography variant="body2">{item.source}</Typography>
-              <Typography variant="caption" sx={{ wordBreak: "break-all" }}>
-                {item.path}
-              </Typography>
-              <Typography>{bytes(item.size_bytes)}</Typography>
+              {item.recommended_vram_gb ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t("generative:fineTuning.label.recommendedVram", {
+                    gb: item.recommended_vram_gb,
+                  })}
+                </Typography>
+              ) : null}
+              {item.path ? (
+                <Typography variant="caption" sx={{ wordBreak: "break-all" }}>
+                  {item.path}
+                </Typography>
+              ) : null}
+              {item.size_bytes ? (
+                <Typography>{bytes(item.size_bytes)}</Typography>
+              ) : null}
             </CardContent>
             {item.kind === "base" && (
               <CardActions>
-                <Button
-                  color="error"
-                  disabled={item.in_use}
-                  onClick={async () => {
-                    if (
-                      !window.confirm(
-                        t("generative:fineTuning.message.deleteConfirm", {
-                          name: item.name,
-                        }),
+                {item.status === "ready" && (
+                  <Button
+                    startIcon={<PlayArrowIcon />}
+                    disabled={busy}
+                    onClick={() => openBaseInGenerative(item)}
+                  >
+                    {t("generative:fineTuning.button.openInGenerative")}
+                  </Button>
+                )}
+                {item.downloadable && (
+                  <Button
+                    variant={item.status === "error" ? "outlined" : "contained"}
+                    disabled={busy}
+                    onClick={async () => {
+                      try {
+                        await downloadLocalModel(item.key);
+                        await refresh();
+                      } catch (nextError) {
+                        setError(errorMessage(nextError));
+                      }
+                    }}
+                  >
+                    {item.status === "error"
+                      ? t("generative:fineTuning.button.retryDownload")
+                      : t("generative:fineTuning.button.download")}
+                  </Button>
+                )}
+                {item.status === "ready" && (
+                  <Button
+                    color="error"
+                    disabled={item.in_use}
+                    onClick={async () => {
+                      if (
+                        !window.confirm(
+                          t("generative:fineTuning.message.deleteConfirm", {
+                            name: item.name,
+                          }),
+                        )
                       )
-                    )
-                      return;
-                    try {
-                      await deleteLocalModel(item.key);
-                      await refresh();
-                    } catch (nextError) {
-                      setError(errorMessage(nextError));
-                    }
-                  }}
-                >
-                  {t("common:delete")}
-                </Button>
+                        return;
+                      try {
+                        await deleteLocalModel(item.key);
+                        await refresh();
+                      } catch (nextError) {
+                        setError(errorMessage(nextError));
+                      }
+                    }}
+                  >
+                    {t("common:delete")}
+                  </Button>
+                )}
               </CardActions>
             )}
           </Card>

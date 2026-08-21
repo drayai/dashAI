@@ -1,6 +1,7 @@
-from typing import Type, TypeVar, Union
+from typing import Any, Type, TypeVar, Union
 
 from pydantic import Field
+from pydantic_core import PydanticUndefined
 from typing_extensions import Annotated
 
 from DashAI.back.core.utils import MultilingualString
@@ -13,6 +14,7 @@ def schema_field(
     placeholder: T,
     description: Union[str, MultilingualString],
     alias: Union[str, MultilingualString] = None,
+    default: Any = PydanticUndefined,
 ) -> Type[T]:
     """Function to create a schema field of type T.
 
@@ -24,6 +26,8 @@ def schema_field(
         The value that will be displayed to the user.
     alias: str, optional
         An alternative name for the field when serialized/deserialized.
+    default: Any, optional
+        Value used when the key is absent, making the field optional.
 
     Returns
     -------
@@ -38,6 +42,8 @@ def schema_field(
         "description": description,
         "json_schema_extra": {"placeholder": placeholder, "display_name": alias},
     }
+    if default is not PydanticUndefined:
+        field_params["default"] = default
     return Annotated[
         t,
         Field(**field_params),

@@ -10,3 +10,4 @@ class GenerativeSessionParams(BaseModel):
     name: str
     description: Union[str, None] = None
     fine_tuning_run_id: Union[int, None] = None
+    local_model_id: Union[int, None] = None

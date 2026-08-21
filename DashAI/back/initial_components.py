@@ -180,6 +180,9 @@ from DashAI.back.models.hugging_face.llama_model import (
     Llama32_1BInstruct,
     Llama32_3BInstruct,
 )
+from DashAI.back.models.hugging_face.local_managed_text_generation_model import (
+    LocalManagedTextGenerationModel,
+)
 from DashAI.back.models.hugging_face.m2m100_transformer import M2M100Transformer
 from DashAI.back.models.hugging_face.minilm_transformer import MiniLMTransformer
 from DashAI.back.models.hugging_face.mistral_model import (
@@ -435,6 +438,7 @@ def get_initial_components():
         Qwen25_05BInstruct,
         Qwen25_15BInstruct,
         PeftAdapterTextGenerationModel,
+        LocalManagedTextGenerationModel,
         OpusMtRoaEnTransformer,
         RandomForestClassifier,
         RobertaTransformer,

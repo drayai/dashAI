@@ -26,7 +26,10 @@ import {
 import { useGenerative } from "./GenerativeContext";
 
 const CreateSessionContext = createContext(null);
-const INTERNAL_FINE_TUNING_MODEL = "PeftAdapterTextGenerationModel";
+const INTERNAL_FINE_TUNING_MODELS = new Set([
+  "PeftAdapterTextGenerationModel",
+  "LocalManagedTextGenerationModel",
+]);
 
 export const useCreateSession = () => useContext(CreateSessionContext);
 
@@ -55,7 +58,7 @@ export function CreateSessionProvider({ children }) {
         getRelatedComponents(task.name).then((components) =>
           components
             .filter(
-              (component) => component.name !== INTERNAL_FINE_TUNING_MODEL,
+              (component) => !INTERNAL_FINE_TUNING_MODELS.has(component.name),
             )
             .map((c) => ({
               ...c,
