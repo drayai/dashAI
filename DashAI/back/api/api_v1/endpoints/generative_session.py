@@ -10,6 +10,7 @@ from DashAI.back.api.api_v1.schemas.generative_session_params import (
     GenerativeSessionParams,
 )
 from DashAI.back.dependencies.database.models import (
+    FineTuningRun,
     GenerativeProcess,
     GenerativeSession,
     GenerativeSessionParameterHistory,
@@ -47,6 +48,32 @@ async def upload_generative_session(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Model {params.model_name} is not registered.",
                 ) from e
+
+            fine_tuning_run = None
+            if params.fine_tuning_run_id is not None:
+                fine_tuning_run = db.get(FineTuningRun, params.fine_tuning_run_id)
+                if not fine_tuning_run:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Fine-tuning run does not exist.",
+                    )
+                if fine_tuning_run.status.value != "completed":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Fine-tuning run has not completed.",
+                    )
+                if params.model_name != "PeftAdapterTextGenerationModel":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Fine-tuning runs must use PeftAdapterTextGenerationModel."
+                        ),
+                    )
+            elif params.model_name == "PeftAdapterTextGenerationModel":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="A completed fine_tuning_run_id is required.",
+                )
 
             # Guard: model requires download but has not been downloaded -> 409.
             # Reconcile against the filesystem so a model downloaded after startup
@@ -112,6 +139,7 @@ async def upload_generative_session(
                 parameters=params.parameters,
                 name=params.name,
                 description=params.description,
+                fine_tuning_run_id=params.fine_tuning_run_id,
             )
             db.add(session)
             try:
@@ -142,6 +170,7 @@ async def upload_generative_session(
                 "parameters": session.parameters,
                 "name": session.name,
                 "description": session.description,
+                "fine_tuning_run_id": session.fine_tuning_run_id,
                 "created": session.created,
                 "last_modified": session.last_modified,
                 "display_name": component_registry[session.task_name]["display_name"],
@@ -246,6 +275,7 @@ async def get_all_generative_sessions(
                     "parameters": session.parameters,
                     "name": session.name,
                     "description": session.description,
+                    "fine_tuning_run_id": session.fine_tuning_run_id,
                     "created": session.created,
                     "last_modified": session.last_modified,
                 }
@@ -415,6 +445,14 @@ async def update_generative_session(
             # selected even when it is not downloaded yet; the chat blocks input
             # and offers a download until the weights become available.
             if model_name is not None and model_name != session.model_name:
+                if model_name == "PeftAdapterTextGenerationModel":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Open an adapter from Fine-tuning to create an "
+                            "adapter-backed session."
+                        ),
+                    )
                 try:
                     model_class = component_registry[model_name]["class"]
                 except KeyError as e:
@@ -449,6 +487,7 @@ async def update_generative_session(
                     }
 
                 session.model_name = model_name
+                session.fine_tuning_run_id = None
                 session.parameters = new_parameters
                 db.add(
                     GenerativeSessionParameterHistory(

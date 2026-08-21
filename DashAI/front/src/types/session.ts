@@ -5,9 +5,10 @@ export interface ISession {
   created: Date;
   last_modified: Date;
   task_name: string;
-  display_name: string;
+  display_name?: string;
   model_name: string;
   parameters: object;
+  fine_tuning_run_id?: number | null;
 }
 
 export interface ISessionParameterHistory {

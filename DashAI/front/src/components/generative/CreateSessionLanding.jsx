@@ -1,4 +1,5 @@
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import SelectOptionMenu from "../threeSectionLayout/SelectOptionMenu";
@@ -16,6 +17,10 @@ export default function CreateSessionLanding() {
     navigate("/app/generative/sessions/new");
   };
 
+  const handleFineTuning = () => {
+    navigate("/app/generative/fine-tuning");
+  };
+
   return (
     <SelectOptionMenu
       goToNextStep={handleCreateSession}
@@ -27,6 +32,13 @@ export default function CreateSessionLanding() {
           display_name: t("generative:label.createNewSession"),
           description: t("generative:label.createNewSessionDescription"),
           Icon: AutoAwesomeIcon,
+        },
+        {
+          name: "fine_tuning",
+          display_name: "Fine-tuning local",
+          description: "Entrena adaptadores LoRA/QLoRA con datasets de DashAI.",
+          Icon: ModelTrainingIcon,
+          onClick: handleFineTuning,
         },
       ]}
       searchBar={false}

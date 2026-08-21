@@ -57,6 +57,8 @@ def build_config_dict(
     config["EXPLANATIONS_PATH"] = local_path / config["EXPLANATIONS_PATH"]
     config["NOTEBOOK_PATH"] = local_path / config["NOTEBOOK_PATH"]
     config["RUNS_PATH"] = local_path / config["RUNS_PATH"]
+    config["LLM_MODELS_PATH"] = local_path / config["LLM_MODELS_PATH"]
+    config["FINE_TUNING_PATH"] = local_path / config["FINE_TUNING_PATH"]
     config["IMAGES_PATH"] = local_path / config["IMAGES_PATH"]
     config["DATAFILE_PATH"] = local_path / config["DATAFILE_PATH"]
     config["CREDENTIALS_KEY_PATH"] = local_path / config["CREDENTIALS_KEY_PATH"]

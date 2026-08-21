@@ -5,6 +5,7 @@ from kink import inject
 from sqlalchemy import exc
 
 from DashAI.back.dependencies.database.models import (
+    FineTuningRun,
     GenerativeProcess,
     GenerativeSession,
     ProcessData,
@@ -160,6 +161,43 @@ class GenerativeJob(BaseJob):
                             " Download it before use."
                         )
                     params = generative_session.parameters
+                    if generative_session.fine_tuning_run_id is not None:
+                        from pathlib import Path
+
+                        from DashAI.back.core.enums.status import FineTuningStatus
+                        from DashAI.back.fine_tuning.model_store import (
+                            ensure_managed_path,
+                            model_directory,
+                        )
+
+                        fine_tuning_run = db.get(
+                            FineTuningRun, generative_session.fine_tuning_run_id
+                        )
+                        if (
+                            not fine_tuning_run
+                            or fine_tuning_run.status != FineTuningStatus.COMPLETED
+                            or not fine_tuning_run.artifact_path
+                        ):
+                            raise JobError("The fine-tuning adapter is not available.")
+                        artifact_path = ensure_managed_path(
+                            Path(fine_tuning_run.artifact_path),
+                            Path(config["FINE_TUNING_PATH"]),
+                        )
+                        base_model_path = model_directory(
+                            Path(config["LLM_MODELS_PATH"]),
+                            fine_tuning_run.base_model_id,
+                            fine_tuning_run.base_model_revision,
+                        )
+                        if not base_model_path.exists():
+                            raise JobError(
+                                "The base model was removed. Download it again "
+                                "before inference."
+                            )
+                        params = {
+                            **params,
+                            "_base_model_path": str(base_model_path),
+                            "_adapter_path": str(artifact_path / "adapter"),
+                        }
                     model: BaseGenerativeModel = model_class(**params)
                 except JobError:
                     generative_process.set_status_as_error()

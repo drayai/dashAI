@@ -13,6 +13,7 @@ import PluginsPage from "./pages/plugins/Plugins";
 import PipelinesPage from "./pages/pipelines/Pipelines";
 import PluginsDetails from "./pages/plugins/components/PluginsDetails";
 import Generative from "./pages/generative/Generative";
+import FineTuning from "./pages/generative/FineTuning";
 import NewPipelineWrapper from "./pages/pipelines/newPipelineWrapper";
 import HubContent from "./pages/hub/HubContent";
 import HubImportPage from "./pages/hub/HubImportPage";
@@ -66,6 +67,7 @@ function App() {
             element={<ModelsPage />}
           />
           <Route path="/app/generative" element={<Generative />} />
+          <Route path="/app/generative/fine-tuning" element={<FineTuning />} />
           <Route path="/app/generative/sessions/new" element={<Generative />} />
           <Route
             path="/app/generative/sessions/new/:modelName"

@@ -10,6 +10,8 @@ import {
   subscribeAnyDownloadState,
 } from "../models/model/ComponentDownloadControl";
 
+const INTERNAL_FINE_TUNING_MODEL = "PeftAdapterTextGenerationModel";
+
 /**
  * Session-level model switcher: lets the user change the model used by a
  * generative session, restricted to models of the same task. Models that are
@@ -32,7 +34,13 @@ export default function ModelSwitcher({
   useEffect(() => {
     if (!taskName) return;
     getRelatedComponents(taskName)
-      .then((components) => setModels(components || []))
+      .then((components) =>
+        setModels(
+          (components || []).filter(
+            (component) => component.name !== INTERNAL_FINE_TUNING_MODEL,
+          ),
+        ),
+      )
       .catch(() => setModels([]));
   }, [taskName]);
 

@@ -26,6 +26,7 @@ import {
 import { useGenerative } from "./GenerativeContext";
 
 const CreateSessionContext = createContext(null);
+const INTERNAL_FINE_TUNING_MODEL = "PeftAdapterTextGenerationModel";
 
 export const useCreateSession = () => useContext(CreateSessionContext);
 
@@ -52,11 +53,15 @@ export function CreateSessionProvider({ children }) {
     return Promise.all(
       tasks.map((task) =>
         getRelatedComponents(task.name).then((components) =>
-          components.map((c) => ({
-            ...c,
-            task_name: task.name,
-            task_display_name: task.display_name || task.name,
-          })),
+          components
+            .filter(
+              (component) => component.name !== INTERNAL_FINE_TUNING_MODEL,
+            )
+            .map((c) => ({
+              ...c,
+              task_name: task.name,
+              task_display_name: task.display_name || task.name,
+            })),
         ),
       ),
     )

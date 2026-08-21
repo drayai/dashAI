@@ -19,6 +19,8 @@ class DefaultSettings(BaseSettings):
     DATASETS_PATH: str = "datasets"
     IMAGES_PATH: str = "images"
     RUNS_PATH: str = "runs"
+    LLM_MODELS_PATH: str = "llm_models"
+    FINE_TUNING_PATH: str = "fine_tuning"
     EXPLANATIONS_PATH: str = "explanations"
     NOTEBOOK_PATH: str = "notebook"
     DATAFILE_PATH: str = "datafiles"

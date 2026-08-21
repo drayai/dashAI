@@ -17,6 +17,15 @@ class RunStatus(Enum):
     ERROR = 4
 
 
+class FineTuningStatus(str, Enum):
+    NOT_STARTED = "not_started"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
 class ExplorerStatus(Enum):
     NOT_STARTED = 0
     DELIVERED = 1

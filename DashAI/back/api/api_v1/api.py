@@ -8,6 +8,7 @@ from DashAI.back.api.api_v1.endpoints.dataset_source import router as dataset_so
 from DashAI.back.api.api_v1.endpoints.datasets import router as datasets
 from DashAI.back.api.api_v1.endpoints.explainers import router as explainers
 from DashAI.back.api.api_v1.endpoints.explorers import router as explorers
+from DashAI.back.api.api_v1.endpoints.fine_tuning import router as fine_tuning
 from DashAI.back.api.api_v1.endpoints.folders import router as folders
 from DashAI.back.api.api_v1.endpoints.generative_process import (
     router as generative_process,
@@ -32,6 +33,7 @@ api_router_v1.include_router(datasets, prefix="/dataset")
 api_router_v1.include_router(model_sessions, prefix="/model-session")
 api_router_v1.include_router(explainers, prefix="/explainer")
 api_router_v1.include_router(explorers, prefix="/explorer")
+api_router_v1.include_router(fine_tuning, prefix="/fine-tuning")
 api_router_v1.include_router(jobs, prefix="/job")
 api_router_v1.include_router(runs, prefix="/run")
 api_router_v1.include_router(predict, prefix="/predict")

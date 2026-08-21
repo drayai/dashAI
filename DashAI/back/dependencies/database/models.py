@@ -28,6 +28,7 @@ from DashAI.back.core.enums.status import (
     DatasetStatus,
     ExplainerStatus,
     ExplorerStatus,
+    FineTuningStatus,
     PluginStatus,
     PredictionStatus,
     RunStatus,
@@ -91,6 +92,9 @@ class Dataset(Base):
         "Prediction", cascade="all, delete-orphan", back_populates="dataset"
     )
     folder: Mapped[Optional["Folder"]] = relationship(back_populates="datasets")
+    fine_tuning_runs: Mapped[List["FineTuningRun"]] = relationship(
+        back_populates="dataset"
+    )
 
     status: Mapped[Enum] = mapped_column(
         Enum(DatasetStatus), nullable=False, default=DatasetStatus.NOT_STARTED
@@ -535,6 +539,9 @@ class GenerativeSession(Base):
     # metadata
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=True)
+    fine_tuning_run_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fine_tuning_run.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationship with GenerativeSessionParameterHistory
     parameters_history: Mapped[List["GenerativeSessionParameterHistory"]] = (
@@ -549,6 +556,96 @@ class GenerativeSession(Base):
     processes: Mapped[List["GenerativeProcess"]] = relationship(
         "GenerativeProcess", cascade="all, delete-orphan", back_populates="session"
     )
+
+    fine_tuning_run: Mapped[Optional["FineTuningRun"]] = relationship(
+        back_populates="generative_sessions"
+    )
+
+
+class FineTuningRun(Base):
+    """A persistent, reproducible local LLM fine-tuning execution."""
+
+    __tablename__ = "fine_tuning_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    dataset_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset.id", ondelete="RESTRICT"), nullable=False
+    )
+    base_model_id: Mapped[str] = mapped_column(String, nullable=False)
+    base_model_revision: Mapped[str] = mapped_column(
+        String, nullable=False, default="main"
+    )
+    resolved_model_revision: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True
+    )
+    method: Mapped[str] = mapped_column(String, nullable=False)
+    dataset_mapping: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    training_parameters: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[FineTuningStatus] = mapped_column(
+        Enum(
+            FineTuningStatus,
+            name="finetuningstatus",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        nullable=False,
+        default=FineTuningStatus.NOT_STARTED,
+    )
+    huey_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    progress_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    metrics: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    runtime_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True
+    )
+    artifact_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancellation_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    created: Mapped[DateTime] = mapped_column(DateTime, default=datetime.now)
+    last_modified: Mapped[DateTime] = mapped_column(
+        DateTime, default=datetime.now, onupdate=datetime.now
+    )
+    start_time: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)
+    end_time: Mapped[Optional[DateTime]] = mapped_column(DateTime, nullable=True)
+
+    dataset: Mapped["Dataset"] = relationship(back_populates="fine_tuning_runs")
+    generative_sessions: Mapped[List["GenerativeSession"]] = relationship(
+        back_populates="fine_tuning_run"
+    )
+
+    def mark_queued(self, huey_id: Optional[str] = None) -> None:
+        self.status = FineTuningStatus.QUEUED
+        self.huey_id = huey_id
+        self.progress = 0.0
+        self.progress_message = "Queued"
+        self.error_message = None
+        self.cancellation_requested = False
+        self.start_time = None
+        self.end_time = None
+
+    def mark_running(self) -> None:
+        self.status = FineTuningStatus.RUNNING
+        self.start_time = datetime.now()
+        self.progress_message = "Preparing training"
+
+    def mark_completed(self) -> None:
+        self.status = FineTuningStatus.COMPLETED
+        self.progress = 1.0
+        self.progress_message = "Training completed"
+        self.end_time = datetime.now()
+
+    def mark_failed(self, message: str) -> None:
+        self.status = FineTuningStatus.FAILED
+        self.error_message = message
+        self.progress_message = "Training failed"
+        self.end_time = datetime.now()
+
+    def mark_canceled(self) -> None:
+        self.status = FineTuningStatus.CANCELED
+        self.progress_message = "Training canceled"
+        self.end_time = datetime.now()
 
 
 class Pipeline(Base):

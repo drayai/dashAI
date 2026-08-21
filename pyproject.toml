@@ -92,6 +92,11 @@ cpu = [
 # PyTorch CUDA 12.8 wheels; llama-cpp-python needs CMAKE_ARGS="-DGGML_CUDA=on"
 # at install time to compile with CUDA offload (see Dockerfile.cuda)
 cuda = ["torch", "torchvision", "llama-cpp-python"]
+finetuning = [
+    "trl==1.10.0",
+    "peft==0.20.0",
+    "bitsandbytes==0.50.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/DashAISoftware/DashAI"

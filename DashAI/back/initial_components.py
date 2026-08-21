@@ -136,6 +136,7 @@ from DashAI.back.job.datafile_job import DatafileJob
 from DashAI.back.job.dataset_job import DatasetJob
 from DashAI.back.job.explainer_job import ExplainerJob
 from DashAI.back.job.explorer_job import ExplorerJob
+from DashAI.back.job.fine_tuning_job import FineTuningJob
 from DashAI.back.job.generative_job import GenerativeJob
 from DashAI.back.job.model_job import ModelJob
 from DashAI.back.job.pipeline_job import PipelineJob
@@ -214,6 +215,9 @@ from DashAI.back.models.hugging_face.opus_mt_fr_en_transformer import (
 )
 from DashAI.back.models.hugging_face.opus_mt_roa_en_transformer import (
     OpusMtRoaEnTransformer,
+)
+from DashAI.back.models.hugging_face.peft_adapter_text_generation_model import (
+    PeftAdapterTextGenerationModel,
 )
 from DashAI.back.models.hugging_face.pixart_sigma_model import PixArtSigma
 from DashAI.back.models.hugging_face.qwen_model import (
@@ -430,6 +434,7 @@ def get_initial_components():
         PixArtSigma,
         Qwen25_05BInstruct,
         Qwen25_15BInstruct,
+        PeftAdapterTextGenerationModel,
         OpusMtRoaEnTransformer,
         RandomForestClassifier,
         RobertaTransformer,
@@ -510,6 +515,7 @@ def get_initial_components():
         ExplainerJob,
         ModelJob,
         ExplorerJob,
+        FineTuningJob,
         PredictJob,
         ConverterJob,
         DatasetJob,

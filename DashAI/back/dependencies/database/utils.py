@@ -203,6 +203,7 @@ def find_entity_by_huey_id(huey_id: str) -> dict:
         Converter,
         Dataset,
         Explorer,
+        FineTuningRun,
         GlobalExplainer,
         LocalExplainer,
         Run,
@@ -211,6 +212,17 @@ def find_entity_by_huey_id(huey_id: str) -> dict:
     session_factory = di["session_factory"]
 
     with session_factory() as db:
+        fine_tuning_run = (
+            db.query(FineTuningRun).filter(FineTuningRun.huey_id == huey_id).first()
+        )
+        if fine_tuning_run:
+            return {
+                "entity_type": "fine_tuning",
+                "entity_id": fine_tuning_run.id,
+                "entity_name": fine_tuning_run.name,
+                "created_at": fine_tuning_run.created,
+            }
+
         run = db.query(Run).filter(Run.huey_id == huey_id).first()
         if run:
             return {
