@@ -157,6 +157,8 @@ Los tres valores de pérdida fueron finitos y el artefacto pudo usarse en infere
 
 La cancelación cooperativa se observa en el límite de un paso. En la GTX 1080 un paso tomó cerca de tres minutos, por lo que la latencia puede ser demasiado alta para la experiencia esperada. Una cancelación fuerte requeriría aislar cada entrenamiento en un subproceso administrado. La reconciliación de runs huérfanos al arrancar fue implementada en la fase de consolidación (ver «Consolidación y robustez»); el script de smoke también limpia sus propios intentos anteriores.
 
+> Actualización posterior: la cancelación fuerte fue implementada mediante aislamiento en proceso hijo; ver «Cancelación fuerte por aislamiento en proceso» más abajo.
+
 ## Consolidación y robustez (rama `memoria/glm-weekend-productization`)
 
 La línea base del prototipo se robusteció en cinco frentes. Todo lo listado aquí está cubierto por pruebas automatizadas; lo que requiere hardware se marca explícitamente.
@@ -205,6 +207,22 @@ El callback de entrenamiento registra por paso: pérdida, norma de gradiente, le
 
 **Hallazgo principal**: `grad_norm` fue `NaN` solo en los pasos 1–4; del paso 5 al 15 fue finito (3,02 en el último). El NaN del smoke de 3 pasos es, por tanto, transitorio y autolimitado en esta configuración, no una inestabilidad persistente. La instrumentación nueva lo reporta exactamente como cuatro advertencias estructuradas sin fallar el run (la pérdida siempre fue finita), que es el comportamiento especificado. No se ejecutaron las dos configuraciones adicionales permitidas: la evidencia caracteriza el fenómeno y el presupuesto de GPU se reserva para el resto de la sesión. Tiempo de GPU consumido hasta ahora: ~35 minutos.
 
+## Cancelación fuerte por aislamiento en proceso
+
+Los backends estándar (Transformers y Unsloth) ahora entrenan en un **proceso hijo gestionado**:
+
+- `DashAI/back/fine_tuning/training_worker.py` es el hijo: se lanza con `python -m DashAI.back.fine_tuning.training_worker <run_id>`, construye una configuración ligera (sin registro de componentes, evitando importar torch/diffusers/timm al arrancar) y ejecuta el run completo (validación de dataset, `ensure_model`, entrenamiento) reportando progreso, métricas y estado final **solo por la base de datos**.
+- `DashAI/back/fine_tuning/training_process.py` es el lado del padre dentro de `FineTuningJob`: lanza el hijo, reenvía el progreso de la BD a la cola de jobs, y aplica la política de cancelación en tres niveles: (1) el hijo observa la bandera cooperativa entre pasos; (2) al solicitar cancelación tiene una gracia de 30 s para terminar solo; (3) si no responde, se emite `terminate()` y, tras 10 s, `kill()`. La muerte del proceso destruye su contexto CUDA y libera la VRAM al instante, que es lo que hace fuerte a la cancelación en Windows. `wait()` garantiza que nunca queda un proceso huérfano.
+- El **lock GPU permanece en el padre** (el worker de Huey), que lo libera en `finally` para éxito, cancelación, fallo y kill. Si el worker muriera bruscamente, la reconciliación del siguiente arranque limpia el lock.
+- Los backends inyectados por el contenedor (pruebas, futuros plugins) conservan la ruta en proceso (`ISOLATED_TRAINING_ENABLED`, desactivable con `DASHAI_ISOLATED_TRAINING=0`).
+- Si el hijo muere sin dejar estado terminal, el padre marca `failed` con el mensaje del hijo o con el código de salida; si la muerte ocurrió tras una solicitud de cancelación, marca `canceled`.
+
+### Validación de la cancelación fuerte
+
+- Pruebas reales de subproceso en Windows (4): hijo que completa (artefacto y métricas persistidos por el hijo), cancelación cooperativa dentro de la gracia (hilo externo marca la bandera cuando el hijo reporta progreso), terminación forzosa de un hijo que ignora la bandera (el retorno solo ocurre tras `wait()`: sin procesos huérfanos) y fallo del hijo reportado con su mensaje. Además, una integración a nivel de job valida la ruta completa por API con adquisición y liberación del lock.
+- **Ejecución real en GPU**: un run QLoRA de 3 pasos (run 5, `E:\DashAI-smoke-finetuning`, `stability_result.json`) entrenó íntegramente por la ruta aislada: el padre mantuvo `gpu.lock` y el hijo entrenó (pasos de 115–137 s, pico 1,66 GB, advertencias NaN en los 3 pasos, coherente con el patrón temprano documentado) y persistió progreso, métricas y estado final por la base de datos.
+- Batería focalizada completa: 65 pruebas backend pasando.
+
 ## Administración e inferencia local (Hito 2)
 
 MVP inspirado en LM Studio, limitado al flujo base+adaptadores de Transformers:
@@ -220,6 +238,10 @@ MVP inspirado en LM Studio, limitado al flujo base+adaptadores de Transformers:
 
 - Ejecución real (`scripts/local_model_inference_check.py`, resultado en `base_inference_result.json`): adopción del snapshot existente vía endpoint de descarga, sesión desde el modelo base con `top_k`/`seed`, y generación correcta («One primary color is red...») en 19,2 s sobre la GTX 1080. Con esto el MVP cumple los seis criterios de aceptación: descargar/reutilizar modelo curado, inventario, sesión desde base, parámetros de generación, respuesta generada, y el flujo equivalente con adaptador ya validado en el smoke del prototipo.
 - Pruebas automatizadas (51 backend + 8 frontend pasando): inventario con modelos no descargados, descarga con estado y 409 en duplicados, eliminación bloqueada por sesión, validación de referencias `local_model_id` (404/400), inyección de `_base_model_path` en `GenerativeJob` mediante registro simulado, descarga y sesión desde base en la interfaz, y compatibilidad de sesiones antiguas.
+
+#### Comparación real base vs adaptador
+
+`scripts/base_vs_adapter_report.py` generó con parámetros idénticos (greedy, seed 42, `top_k` 50, 48 tokens) sobre el modelo base administrado y sobre el adaptador del run de 15 pasos (resultado en `base_vs_adapter_result.json`). Las tres respuestas son coherentes en ambos casos (4–10 s por generación), y el adaptador muestra una **deriva de estilo reproducible** hacia el formato instrucción-respuesta de Dolly (p. ej. abre con «In one sentence, I could say: ...»), evidencia cualitativa de que el ajuste afectó el comportamiento sin degradar la fluidez. No es un benchmark de calidad: para eso se requiere un protocolo con métricas y conjunto de evaluación.
 
 ## Backend Unsloth opcional (Hito 3)
 
@@ -276,4 +298,4 @@ No se implementaron Unsloth, GGUF, publicación a Hugging Face Hub, entrenamient
 
 ## Siguientes pasos técnicos recomendados
 
-Estado tras la productización: la reconciliación al arrancar, la programación exclusiva de GPU, la instrumentación de estabilidad (con la prueba real de 15 pasos), la internacionalización completa y el inventario local con descargas y sesión desde modelo base ya están implementados y validados. Lo pendiente, en orden de impacto: cancelación fuerte mediante aislamiento del entrenamiento en un subproceso gestionado; comparación de calidad de inferencia base versus adaptada con un protocolo de evaluación; una prueba de estabilidad más larga (40–50 pasos) y con warmup explícito para caracterizar el NaN temprano de `grad_norm`; y la decisión con el profesor sobre plugins, artefactos (fusión/GGUF) y modelos soportados antes de ampliar el catálogo. Unsloth queda habilitable cuando exista hardware con compute capability ≥ 7.0 o una ventana para re-pin del stack.
+Estado tras la productización: la reconciliación al arrancar, la programación exclusiva de GPU, la instrumentación de estabilidad (con la prueba real de 15 pasos), la internacionalización completa, el inventario local con descargas y sesión desde modelo base, la cancelación fuerte por aislamiento en proceso y una primera comparación cualitativa base vs adaptador ya están implementados y validados. Lo pendiente, en orden de impacto: un protocolo de evaluación de calidad base vs adaptado con métricas y conjunto de evaluación; una prueba de estabilidad más larga (40–50 pasos) y con warmup explícito para caracterizar el NaN temprano de `grad_norm` (añadir `warmup_steps` a `TrainingParameters`); latencia de cancelación observada en UI (hoy: gracia cooperativa de 30 s + kill); y la decisión con el profesor sobre plugins, artefactos (fusión/GGUF) y modelos soportados antes de ampliar el catálogo. Unsloth queda habilitable cuando exista hardware con compute capability ≥ 7.0 o una ventana para re-pin del stack.

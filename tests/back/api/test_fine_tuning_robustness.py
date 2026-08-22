@@ -117,6 +117,11 @@ def test_unsloth_run_uses_the_unsloth_backend(client: TestClient, monkeypatch):
         "DashAI.back.fine_tuning.unsloth_backend.UnslothFineTuningBackend",
         FakeUnslothBackend,
     )
+    # The fake is injected through module patching, which only works in the
+    # in-process training path.
+    monkeypatch.setattr(
+        "DashAI.back.job.fine_tuning_job.ISOLATED_TRAINING_ENABLED", False
+    )
     monkeypatch.setattr(
         "DashAI.back.job.fine_tuning_job.ensure_model",
         lambda _root, model_id, revision, progress=None: (
@@ -229,6 +234,46 @@ def test_worker_releases_lock_when_backend_fails(client: TestClient, monkeypatch
         state = _run_status(client, run_id)
         assert state["status"] == "failed"
         assert "boom during training" in state["error_message"]
+        assert not lock.is_locked()
+    finally:
+        if lock.path.exists():
+            lock.clear()
+
+
+def test_job_runs_isolated_child_and_releases_lock(client: TestClient, monkeypatch):
+    import json as _json
+
+    models_root = Path(client.app.container["config"]["LLM_MODELS_PATH"])
+    snapshot = models_root / "qwen2.5-0.5b-instruct" / "main"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    (snapshot / ".dashai_model.json").write_text(
+        _json.dumps(
+            {
+                "model_id": "qwen2.5-0.5b-instruct",
+                "repository": "Qwen/Qwen2.5-0.5B-Instruct",
+                "requested_revision": "main",
+                "resolved_revision": "stub-sha",
+            }
+        ),
+        encoding="utf-8",
+    )
+    # The isolated path is only taken when no backend is injected.
+    client.app.container._services.pop("fine_tuning_backend", None)
+    monkeypatch.setenv(
+        "DASHAI_FINE_TUNING_BACKEND_OVERRIDE",
+        "tests.back.fine_tuning.stub_backends:StubSuccessBackend",
+    )
+
+    dataset = _create_dataset(client)
+    run_id = _create_run(client, dataset.id, "isolated job run")
+    lock = _lock(client)
+    try:
+        response = client.post(f"/api/v1/fine-tuning/runs/{run_id}/start")
+        assert response.status_code == 200
+        assert response.json()["status"] == "completed"
+        assert response.json()["metrics"]["stub"] == "success"
+        assert (Path(response.json()["artifact_path"]) / "manifest.json").exists()
         assert not lock.is_locked()
     finally:
         if lock.path.exists():

@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,7 @@ from DashAI.back.fine_tuning.huggingface_backend import (
 )
 from DashAI.back.fine_tuning.model_store import ensure_model
 from DashAI.back.fine_tuning.resource_lock import training_lock
+from DashAI.back.fine_tuning.training_process import run_isolated_training
 from DashAI.back.job.base_job import BaseJob, JobError
 
 if TYPE_CHECKING:
@@ -31,6 +33,11 @@ logger = logging.getLogger(__name__)
 # How long the worker waits for the GPU lock before failing the run with an
 # actionable error (smooths the transition between back-to-back jobs).
 WORKER_LOCK_WAIT_SECONDS = 10.0
+
+# Stock backends train in an isolated child process so cancellation can be
+# enforced (killing the child frees VRAM immediately). Backends injected
+# through the container (tests, plugins) keep the in-process path.
+ISOLATED_TRAINING_ENABLED = os.environ.get("DASHAI_ISOLATED_TRAINING", "1") != "0"
 
 
 class FineTuningJob(BaseJob):
@@ -71,6 +78,16 @@ class FineTuningJob(BaseJob):
                 return f"Fine-tune: {run.name}" if run else "Fine-tuning"
         except Exception:
             return f"Fine-tuning #{run_id}"
+
+    def _report_run_progress(self, session_factory, run_id: int) -> None:
+        """Forward the child's DB progress to the job queue (0-100 scale)."""
+        try:
+            with session_factory() as db:
+                run = db.get(FineTuningRun, run_id)
+                if run:
+                    self.report_progress(run.progress * 100, run.progress_message)
+        except Exception:
+            logger.debug("Could not forward fine-tuning progress.", exc_info=True)
 
     def run(self) -> None:
         session_factory = di["session_factory"]
@@ -127,6 +144,24 @@ class FineTuningJob(BaseJob):
                 method = FineTuningMethod(run.method)
 
             update(0.01, "Validating dataset")
+
+            if ISOLATED_TRAINING_ENABLED and "fine_tuning_backend" not in di:
+                # Stock backends train in a managed child process: strong
+                # cancellation, crash isolation, and instant VRAM release.
+                final_status = run_isolated_training(
+                    run_id=run_id,
+                    session_factory=session_factory,
+                    local_path=Path(config["LOCAL_PATH"]),
+                    report=lambda: self._report_run_progress(session_factory, run_id),
+                    canceled=canceled,
+                )
+                if final_status == FineTuningStatus.FAILED:
+                    with session_factory() as db:
+                        run = db.get(FineTuningRun, run_id)
+                        message = run.error_message if run else "Training failed."
+                    raise JobError(message)
+                return
+
             prepared = prepare_dataset(dataset_path, mapping, parameters)
             if canceled():
                 raise TrainingCanceledError
